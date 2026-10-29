@@ -32,13 +32,21 @@
       return 'clips/';
     }
   })();
+  // 1.1.4 起官方语音外置到 ~/.dsh/columbina-pet/voice/official，包内不再带这个目录，
+  // 所以优先用宿主提供的 HTTP 基准（与 configUrl 同源，走 /voice/official/ 路由）；
+  // 旧版包内相对路径只作为兜底。
   var OFFICIAL_BASE = (function () {
+    try {
+      var cfgUrl = new URLSearchParams(location.search).get('configUrl');
+      if (cfgUrl) return new URL('voice/official/', cfgUrl).href;
+    } catch (e) { /* 走兜底 */ }
     try {
       return new URL('official/', SELF_SRC).href;
     } catch (e) {
       return 'official/';
     }
   })();
+  var officialUnavailable = false;
 
   var VOLUME = 0.9;
   var MAX_CLIPS = bank.maxClips || 2;
@@ -462,7 +470,13 @@
           resolve();
         };
         audio.addEventListener('ended', done, { once: true });
-        audio.addEventListener('error', done, { once: true });
+        audio.addEventListener('error', function () {
+          // 官方原声取不到（外置目录缺失/未下载/路由 404）：标记一次，后续回退包内切片，
+          // 至少不会出现「气泡在、嘴巴在动、就是没声音」。
+          officialUnavailable = true;
+          console.warn('[columbina-voice] 官方原声加载失败，回退切片：' + (OFFICIAL_BASE + file));
+          done();
+        }, { once: true });
         audio.addEventListener('pause', done, { once: true });
 
         if (withBubble !== false) {
@@ -501,7 +515,7 @@
    */
   function playLine(line, withBubble) {
     if (!line) return null;
-    if (lineFileOf(line, voiceLang) || lineFileOf(line, 'zh')) return playFileLine(line, withBubble);
+    if (!officialUnavailable && (lineFileOf(line, voiceLang) || lineFileOf(line, 'zh'))) return playFileLine(line, withBubble);
     if (speaking) stopAudio();          // 同上：用户意图优先
     var segments = Array.isArray(line.s && line.s.zh) && line.s.zh.length ? line.s.zh : null;
     lastText = lineTextOf(line, 'zh');
