@@ -1570,7 +1570,7 @@
       'background:transparent;pointer-events:none;font-family:"Microsoft YaHei","PingFang SC","Segoe UI",sans-serif;color:#EFE8FF;',
       'animation:cv-in .16s ease-out}',
       '@keyframes cv-in{from{opacity:0}to{opacity:1}}',
-      '#' + PANEL_ID + ' .cv-card{pointer-events:auto;position:absolute;left:50%;transform:translateX(-50%);top:8px;width:min(392px,calc(100vw - 16px));max-height:calc(100vh - 16px);display:flex;flex-direction:column;border-radius:18px;',
+      '#' + PANEL_ID + ' .cv-card{pointer-events:auto;position:absolute;left:8px;top:8px;width:392px;max-height:calc(100vh - 16px);display:flex;flex-direction:column;border-radius:18px;',
       'background:rgba(24,18,36,.97);border:1px solid rgba(160,132,230,.30);',
       'box-shadow:0 26px 70px rgba(0,0,0,.52),inset 0 1px 0 rgba(255,255,255,.05);overflow:hidden}',
       '#' + PANEL_ID + ' .cv-head{display:flex;align-items:center;gap:8px;padding:11px 14px 8px;',
@@ -1827,26 +1827,82 @@
 
   // 桌宠窗口可能有一截落在屏幕外（宠物贴底时最明显）：卡片按"窗口在屏上的可见部分"定高，
   // 并把顶部对齐到可见区顶端，避免面板下半截跑到屏幕外面。
+  // 桌宠窗口可能有一截落在屏幕外（宠物贴边时最明显）：卡片按"窗口在屏上的可见矩形"落位，
+  // 横竖都夹在可见区内，避免面板跑到屏幕外被裁掉。
+  function panelVisibleBox() {
+    var inner = Number(window.innerHeight) || 0;
+    var innerW = Number(window.innerWidth) || 0;
+    var sy = Number(window.screenY) || 0;
+    var sx = Number(window.screenX) || 0;
+    var outerH = Number(window.outerHeight) || inner;
+    var outerW = Number(window.outerWidth) || innerW;
+    var scr = window.screen || {};
+    var availH = Number(scr.availHeight) || (sy + outerH);
+    var availW = Number(scr.availWidth) || (sx + outerW);
+    var availTop = Number(scr.availTop) || 0;
+    var availLeft = Number(scr.availLeft) || 0;
+    var chromeH = Math.max(0, outerH - inner);
+    var chromeW = Math.max(0, outerW - innerW);
+    var top0 = Math.max(availTop, sy + chromeH / 2);
+    var bottom1 = Math.min(availTop + availH, sy + outerH - chromeH / 2);
+    var left0 = Math.max(availLeft, sx + chromeW / 2);
+    var right1 = Math.min(availLeft + availW, sx + outerW - chromeW / 2);
+    // 转成窗口内容区局部坐标
+    var localTop = Math.max(4, top0 - sy - chromeH / 2);
+    var localLeft = Math.max(4, left0 - sx - chromeW / 2);
+    var localBottom = Math.min(inner, bottom1 - sy - chromeH / 2);
+    var localRight = Math.min(innerW, right1 - sx - chromeW / 2);
+    return {
+      left: localLeft + 6,
+      top: localTop + 6,
+      width: Math.max(220, localRight - localLeft - 12),
+      height: Math.max(96, localBottom - localTop - 12),
+    };
+  }
+
   function fitPanelCard() {
     if (!panelEl) return;
     var card = panelEl.querySelector('.cv-card');
     if (!card) return;
-    var sy = Number(window.screenY) || 0;
-    var inner = Number(window.innerHeight) || 0;
-    var outer = Number(window.outerHeight) || inner;
-    var availH = (window.screen && Number(window.screen.availHeight)) || (sy + outer);
-    if (!inner) return;
-    var visTop = Math.max(0, sy);
-    var visBottom = Math.min(availH, sy + outer);
-    var chrome = Math.max(0, outer - inner);
-    var topInWindow = Math.max(4, Math.min(visTop - sy + chrome / 2 + 6, availH - sy - 120));
-    var height = Math.max(96, visBottom - (sy + topInWindow) - 10);
-    card.style.top = Math.round(topInWindow) + 'px';
-    card.style.maxHeight = Math.round(height) + 'px';
+    var box = panelVisibleBox();
+    card.style.left = Math.round(box.left) + 'px';
+    card.style.top = Math.round(box.top) + 'px';
+    card.style.width = Math.round(Math.min(392, box.width)) + 'px';
+    card.style.maxHeight = Math.round(box.height) + 'px';
+  }
+
+  // 标题栏拖拽：在可见区内移动卡片（不改窗口位置）
+  function makeCardDraggable(card) {
+    var head = card.querySelector('.cv-head');
+    if (!head || head.__cvDragBound) return;
+    head.__cvDragBound = true;
+    var drag = null;
+    head.addEventListener('pointerdown', function (event) {
+      if (event.button !== 0) return;
+      if (event.target && event.target.closest && event.target.closest('.cv-x')) return;
+      var rect = card.getBoundingClientRect();
+      drag = { px: event.clientX, py: event.clientY, left: rect.left, top: rect.top };
+      head.setPointerCapture(event.pointerId);
+      event.preventDefault();
+    });
+    head.addEventListener('pointermove', function (event) {
+      if (!drag) return;
+      var box = panelVisibleBox();
+      var maxLeft = box.left + box.width - card.offsetWidth;
+      var maxTop = box.top + box.height - Math.min(card.offsetHeight, box.height);
+      var nx = Math.max(box.left, Math.min(drag.left + event.clientX - drag.px, Math.max(box.left, maxLeft)));
+      var ny = Math.max(box.top, Math.min(drag.top + event.clientY - drag.py, Math.max(box.top, maxTop)));
+      card.style.left = Math.round(nx) + 'px';
+      card.style.top = Math.round(ny) + 'px';
+    });
+    var stop = function () { drag = null; };
+    head.addEventListener('pointerup', stop);
+    head.addEventListener('pointercancel', stop);
   }
   window.__columbinaPanelFit = fitPanelCard;
 
   function closeSettingsOverlay() {
+    if (panelEl && panelEl.__cvCleanup) { try { panelEl.__cvCleanup(); } catch (error) {} }
     if (panelEl && panelEl.parentNode) panelEl.parentNode.removeChild(panelEl);
     panelEl = null;
     setPanelBusy(false);
@@ -1877,8 +1933,29 @@
     }
     document.addEventListener('keydown', onKey);
     window.addEventListener('resize', fitPanelCard);
+    var cardEl = panelEl.querySelector('.cv-card');
+    if (cardEl) makeCardDraggable(cardEl);
     setPanelBusy(true);
     fitPanelCard();
+    // 键盘关闭 + 点面板外关闭：桌宠窗口平时不抢焦点，这里只在面板打开期间临时抢一次
+    try {
+      var bridge = window.petBridge;
+      if (bridge && typeof bridge.focusWindow === 'function') bridge.focusWindow();
+      window.focus();
+    } catch (error) { /* 拿不到焦点也不影响鼠标操作 */ }
+    var outside = function (event) {
+      if (!panelEl) return;
+      if (panelEl.contains(event.target)) return;
+      closeSettingsOverlay();
+    };
+    document.addEventListener('pointerdown', outside, true);
+    var onBlur = function () { closeSettingsOverlay(); };
+    window.addEventListener('blur', onBlur);
+    panelEl.__cvCleanup = function () {
+      document.removeEventListener('pointerdown', outside, true);
+      window.removeEventListener('blur', onBlur);
+      window.removeEventListener('resize', fitPanelCard);
+    };
     if (section === 'scale') {
       var body = panelEl.querySelector('#cv-body');
       var scaleSec = body && body.querySelector('[data-sec="scale"]');

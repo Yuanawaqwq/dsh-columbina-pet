@@ -1005,9 +1005,10 @@ function mountContextMenu(opts) {
 		panel.style.left = "";
 		panel.style.top = "";
 		panel.style.display = "block";
+		panel.style.maxWidth = Math.max(120, c.x + c.w - 8) + "px";
 		let left = rect.right + 4;
 		if (left + panel.offsetWidth > c.x + c.w - 4) left = rect.left - panel.offsetWidth - 4;
-		left = Math.max(c.x + 4, left);
+		left = Math.max(c.x + 4, Math.min(left, Math.max(c.x + 4, c.x + c.w - panel.offsetWidth - 4)));
 		let top = rect.top;
 		if (top + panel.offsetHeight > c.y + c.h - 4) top = Math.max(c.y + 4, c.y + c.h - 4 - panel.offsetHeight);
 		panel.style.left = left + "px";
@@ -1066,9 +1067,11 @@ function mountContextMenu(opts) {
 	document.body.appendChild(root);
 	rootPanel.style.left = "";
 	rootPanel.style.top = "";
-	const rw = rootPanel.offsetWidth;
+	rootPanel.style.maxWidth = Math.max(120, c.w - 8) + "px";
+	if (rootPanel.offsetHeight > c.h - 8) rootPanel.style.maxHeight = Math.max(120, c.h - 8) + "px";
+	const rw = Math.min(rootPanel.offsetWidth, Math.max(120, c.w - 8));
 	const rh = rootPanel.offsetHeight;
-	rootPanel.style.left = Math.max(c.x + 4, Math.min(x, c.x + c.w - rw - 4)) + "px";
+	rootPanel.style.left = Math.max(c.x + 4, Math.min(x, Math.max(c.x + 4, c.x + c.w - rw - 4))) + "px";
 	rootPanel.style.top = Math.max(c.y + 4, Math.min(y, c.y + c.h - rh - 4)) + "px";
 	root.addEventListener("mouseleave", () => {
 		if (leaveTimer !== null) window.clearTimeout(leaveTimer);

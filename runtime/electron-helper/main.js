@@ -899,6 +899,12 @@ app.whenReady().then(() => {
   // 拖拽持有完整输入租约；菜单/对话则由 inputRegions 把交互限制在实际控件矩形内。
   // 只存标记、不直接翻转窗口——**唯一出口**仍是 setWindowIgnore（在兜底轮询里按完整规则判定），
   // 否则会出现"两条通道抢着翻同一个窗口"的竞态。
+  // 设置面板要焦点：showInactive 出来的窗口渲染端 focus() 无效，只能主进程代劳。
+  ipcMain.on('pet:focus-window', (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (win && !win.isDestroyed()) win.focus();
+  });
+
   ipcMain.on('pet:input-busy', (event, busy) => {
     const win = BrowserWindow.fromWebContents(event.sender);
     if (!win || win.isDestroyed()) return;

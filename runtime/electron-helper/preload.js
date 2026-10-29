@@ -38,6 +38,11 @@ contextBridge.exposeInMainWorld('petBridge', {
       marginT,
     });
   },
+  // 设置面板打开时临时要一次窗口焦点：桌宠窗口用 showInactive 显示，渲染端 window.focus()
+  // 拿不到焦点（实测 hasFocus 仍 false），Esc 键与 blur 都收不到，面板只能靠 ✕ 关。
+  focusWindow() {
+    ipcRenderer.send('pet:focus-window');
+  },
   setInteractive(interactive) {
     ipcRenderer.send('pet:set-interactive', !!interactive);
   },
