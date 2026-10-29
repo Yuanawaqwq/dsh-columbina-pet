@@ -705,6 +705,9 @@
           subLang: subLang,
           menuLang: menuLang,
           scale: scalePref,
+          lines: allowedLines === null ? null : Object.keys(allowedLines).filter(function (k) {
+            return allowedLines[k] === true;
+          }).map(Number),
           at: localAt,
         }));
       }
@@ -720,6 +723,13 @@
       subLang = normLang(prefs.subLang, subLang);
       menuLang = normLang(prefs.menuLang, menuLang);
       if (typeof prefs.scale === 'number') scalePref = clampScale(prefs.scale);
+      if (Array.isArray(prefs.lines)) {
+        allowedLines = {};
+        for (var i = 0; i < prefs.lines.length; i++) {
+          var idx = Number(prefs.lines[i]);
+          if (isFinite(idx)) allowedLines[idx] = true;
+        }
+      }
       if (typeof prefs.at === 'string') localAt = prefs.at;
     } catch (e) { /* ignore */ }
   }
@@ -1546,29 +1556,303 @@
   // 只要求：气泡是我们自己弹的（登记 ownBubbleText），别让它被当成对话回复去念语音。
   var stickerList = bank.stickers || [];
 
+  // ---------- 内置设置面板 ----------
+  // 主题（dsh-columbina-theme）关掉之后，右建设置那条通道就断了；
+  // 这里在桌宠页面里直接渲染一个面板，改完写本地偏好，不依赖任何宿主。
+  var PANEL_ID = 'columbina-voice-panel';
+  var panelEl = null;
+  var panelSection = 'voice';
+  var panelBusy = false;
+
+  function panelStyles() {
+    return [
+      '#' + PANEL_ID + '{position:fixed;inset:0;z-index:2147483000;display:flex;align-items:center;justify-content:center;',
+      'background:rgba(9,7,16,.52);font-family:"Microsoft YaHei","PingFang SC","Segoe UI",sans-serif;color:#EFE8FF;',
+      'animation:cv-in .16s ease-out}',
+      '@keyframes cv-in{from{opacity:0}to{opacity:1}}',
+      '#' + PANEL_ID + ' .cv-card{width:392px;max-height:86vh;display:flex;flex-direction:column;border-radius:18px;',
+      'background:rgba(24,18,36,.97);border:1px solid rgba(160,132,230,.30);',
+      'box-shadow:0 26px 70px rgba(0,0,0,.52),inset 0 1px 0 rgba(255,255,255,.05);overflow:hidden}',
+      '#' + PANEL_ID + ' .cv-head{display:flex;align-items:center;gap:8px;padding:14px 16px 10px;',
+      'border-bottom:1px solid rgba(160,132,230,.16)}',
+      '#' + PANEL_ID + ' .cv-title{font-size:14.5px;letter-spacing:.04em;color:#F4EEFF;flex:1}',
+      '#' + PANEL_ID + ' .cv-title i{font-style:normal;font-size:10.5px;color:#9C8BC0;margin-left:6px;letter-spacing:0}',
+      '#' + PANEL_ID + ' .cv-x{width:24px;height:24px;border:0;border-radius:8px;background:transparent;color:#B9A9DE;',
+      'font-size:17px;line-height:1;cursor:pointer}',
+      '#' + PANEL_ID + ' .cv-x:hover{background:rgba(255,255,255,.07);color:#fff}',
+      '#' + PANEL_ID + ' .cv-body{padding:6px 16px 12px;overflow-y:auto;scrollbar-width:thin}',
+      '#' + PANEL_ID + ' .cv-body::-webkit-scrollbar{width:8px}',
+      '#' + PANEL_ID + ' .cv-body::-webkit-scrollbar-thumb{background:rgba(150,124,214,.35);border-radius:8px}',
+      '#' + PANEL_ID + ' .cv-sec{font-size:11px;letter-spacing:.14em;color:#9C8BC0;margin:13px 0 8px}',
+      '#' + PANEL_ID + ' .cv-row{display:flex;align-items:center;gap:10px;padding:7px 0;font-size:13px;color:#DCD2F2}',
+      '#' + PANEL_ID + ' .cv-row .cv-lab{flex:1;min-width:74px;color:#CFC3EA}',
+      '#' + PANEL_ID + ' .cv-chips{display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end}',
+      '#' + PANEL_ID + ' .cv-chip{border:1px solid rgba(160,132,230,.30);background:rgba(255,255,255,.03);',
+      'color:#CBBDEA;border-radius:999px;padding:4px 11px;font-size:11.5px;cursor:pointer;transition:all .12s}',
+      '#' + PANEL_ID + ' .cv-chip:hover{border-color:rgba(201,175,245,.7);color:#fff}',
+      '#' + PANEL_ID + ' .cv-chip.on{background:#C9AFF5;border-color:#C9AFF5;color:#1A1226;font-weight:600}',
+      '#' + PANEL_ID + ' .cv-switch{width:38px;height:21px;border-radius:999px;background:rgba(255,255,255,.12);',
+      'position:relative;cursor:pointer;border:0;transition:background .16s}',
+      '#' + PANEL_ID + ' .cv-switch.on{background:#C9AFF5}',
+      '#' + PANEL_ID + ' .cv-switch span{position:absolute;top:2px;left:2px;width:17px;height:17px;border-radius:50%;',
+      'background:#EFE8FF;transition:transform .16s}',
+      '#' + PANEL_ID + ' .cv-switch.on span{transform:translateX(17px);background:#1A1226}',
+      '#' + PANEL_ID + ' input[type=range]{-webkit-appearance:none;width:132px;height:4px;border-radius:4px;',
+      'background:rgba(201,175,245,.28);outline:0}',
+      '#' + PANEL_ID + ' input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:13px;height:13px;',
+      'border-radius:50%;background:#C9AFF5;cursor:pointer}',
+      '#' + PANEL_ID + ' .cv-val{font-size:11.5px;color:#9C8BC0;min-width:44px;text-align:right}',
+      '#' + PANEL_ID + ' .cv-lines{max-height:172px;overflow-y:auto;border:1px solid rgba(160,132,230,.18);',
+      'border-radius:10px;padding:2px 8px;background:rgba(0,0,0,.16)}',
+      '#' + PANEL_ID + ' .cv-grp{font-size:11px;color:#9C8BC0;padding:6px 0 2px}',
+      '#' + PANEL_ID + ' .cv-line{display:flex;gap:7px;align-items:flex-start;padding:2.5px 0;font-size:12px;',
+      'color:#C9BCE4;cursor:pointer;line-height:1.45}',
+      '#' + PANEL_ID + ' .cv-line input{margin:1px 0 0;accent-color:#C9AFF5;cursor:pointer;flex:0 0 auto}',
+      '#' + PANEL_ID + ' .cv-mini{border:0;background:transparent;color:#9C8BC0;font-size:11px;cursor:pointer;padding:2px 4px}',
+      '#' + PANEL_ID + ' .cv-mini:hover{color:#C9AFF5}',
+      '#' + PANEL_ID + ' .cv-foot{padding:9px 16px 12px;border-top:1px solid rgba(160,132,230,.14);',
+      'font-size:11px;color:#8E7FB4;letter-spacing:.02em}',
+    ].join('');
+  }
+
+  function ensurePanelStyles() {
+    if (document.getElementById('columbina-voice-panel-style')) return;
+    var style = document.createElement('style');
+    style.id = 'columbina-voice-panel-style';
+    style.textContent = panelStyles();
+    document.head.appendChild(style);
+  }
+
+  function langChips(kind) {
+    var cur = kind === 'voice' ? voiceLang : (kind === 'sub' ? subLang : menuLang);
+    return LANGS.map(function (code) {
+      return '<button class="cv-chip' + (code === cur ? ' on' : '') + '" data-act="lang" data-kind="' +
+        kind + '" data-v="' + code + '">' + LANG_NAME[code] + '</button>';
+    }).join('');
+  }
+
+  function scaleChips() {
+    return SCALE_CHOICES.map(function (k) {
+      var pct = Math.round(k * 100) + '%';
+      return '<button class="cv-chip' + (Math.abs(k - scalePref) < 0.001 ? ' on' : '') +
+        '" data-act="scale" data-v="' + k + '">' + pct + '</button>';
+    }).join('');
+  }
+
+  function skinChips() {
+    if (!skins || skins.length < 2) return '<span class="cv-val">只有一套形象</span>';
+    return skins.map(function (s) {
+      return '<button class="cv-chip' + (s.id === skinId ? ' on' : '') + '" data-act="skin" data-v="' +
+        s.id + '">' + s.name + '</button>';
+    }).join('');
+  }
+
+  function linesBlock() {
+    var groups = [];
+    var byTab = {};
+    for (var i = 0; i < lineList.length; i++) {
+      var line = lineList[i];
+      var tab = line.tab || '其他';
+      if (!byTab[tab]) { byTab[tab] = []; groups.push(tab); }
+      byTab[tab].push(line);
+    }
+    var html = ['<div class="cv-row" style="padding-top:2px"><span class="cv-lab">只念勾选的句子</span>',
+      '<button class="cv-mini" data-act="lines-all">全选</button>',
+      '<button class="cv-mini" data-act="lines-none">全不选</button></div>',
+      '<div class="cv-lines">'];
+    for (var g = 0; g < groups.length; g++) {
+      html.push('<div class="cv-grp">' + groups[g] + '</div>');
+      var arr = byTab[groups[g]];
+      for (var k = 0; k < arr.length; k++) {
+        var l = arr[k];
+        var text = (l.t && (l.t[subLang] || l.t.zh)) || l.label || '';
+        var name = String(l.label || text).replace(/</g, '&lt;');
+        html.push('<label class="cv-line" title="' + String(text).replace(/"/g, '&quot;').replace(/</g, '&lt;') +
+          '"><input type="checkbox" data-act="line" data-idx="' + l.index + '"' +
+          (lineAllowed(l) ? ' checked' : '') + '><span>' + name + '</span></label>');
+      }
+    }
+    html.push('</div>');
+    return html.join('');
+  }
+
+  function cityLabel() {
+    var g = weatherGeo || readStore(WEATHER_GEO_KEY);
+    if (!g) return '还没认出城市';
+    return g.cityZh || g.city || '';
+  }
+
+  function renderPanel() {
+    if (!panelEl) return;
+    var target = document.getElementById('cv-body');
+    if (!target) return;
+    target.innerHTML = [
+      '<div class="cv-sec" data-sec="voice">碎碎念</div>',
+      '<div class="cv-row"><span class="cv-lab">开口说话</span>',
+      '<button class="cv-switch' + (enabled ? ' on' : '') + '" data-act="enabled" aria-label="切换"><span></span></button></div>',
+      '<div class="cv-row"><span class="cv-lab">间隔</span>',
+      '<input type="range" min="60" max="180" step="15" value="' + intervalSec + '" data-act="interval">',
+      '<span class="cv-val">' + intervalSec + ' 秒</span></div>',
+      '<div class="cv-sec" data-sec="lang">语言</div>',
+      '<div class="cv-row"><span class="cv-lab">配音</span><div class="cv-chips">' + langChips('voice') + '</div></div>',
+      '<div class="cv-row"><span class="cv-lab">字幕</span><div class="cv-chips">' + langChips('sub') + '</div></div>',
+      '<div class="cv-row"><span class="cv-lab">菜单</span><div class="cv-chips">' + langChips('menu') + '</div></div>',
+      '<div class="cv-sec" data-sec="scale">模型大小</div>',
+      '<div class="cv-row"><div class="cv-chips" style="flex:1;justify-content:flex-start">' + scaleChips() + '</div></div>',
+      '<div class="cv-sec">2D live 形象</div>',
+      '<div class="cv-row"><div class="cv-chips" style="flex:1;justify-content:flex-start">' + skinChips() + '</div></div>',
+      '<div class="cv-sec" data-sec="lines">原声台词</div>',
+      linesBlock(),
+      '<div class="cv-sec" data-sec="weather">天气</div>',
+      '<div class="cv-row"><span class="cv-lab">城市</span><span class="cv-val" style="flex:1;text-align:left">' +
+        cityLabel() + '</span></div>',
+      '<div class="cv-row"><button class="cv-chip" data-act="weather-loc">重新定位</button>',
+      '<button class="cv-chip" data-act="weather-today">播报一次</button></div>',
+    ].join('');
+    var body = document.getElementById('cv-body');
+    if (body) {
+      var sec = body.querySelector('.cv-sec[data-sec="' + panelSection + '"]');
+      var top = sec ? Math.max(0, sec.offsetTop - 6) : 0;
+      body.scrollTop = top;
+    }
+  }
+
+  function panelPickLine(idx, on) {
+    if (allowedLines === null) {
+      allowedLines = {};
+      for (var i = 0; i < lineList.length; i++) allowedLines[lineList[i].index] = true;
+    }
+    allowedLines[idx] = on;
+    var all = true;
+    for (var j = 0; j < lineList.length; j++) {
+      if (allowedLines[lineList[j].index] !== true) { all = false; break; }
+    }
+    if (all) allowedLines = null;
+    writeLocalPrefs();
+  }
+
+  function panelClick(event) {
+    var el = event.target && event.target.closest ? event.target.closest('[data-act]') : null;
+    if (!el) return;
+    var act = el.getAttribute('data-act');
+    if (act === 'close') { closeSettingsOverlay(); return; }
+    if (act === 'enabled') {
+      enabled = !enabled;
+      writeLocalPrefs();
+      if (!enabled) {
+        if (whisperTimer) clearTimeout(whisperTimer);
+        whisperTimer = null;
+        nextWhisperAt = 0;
+      } else {
+        scheduleWhisper(intervalMs());
+      }
+      renderPanel();
+      return;
+    }
+    if (act === 'interval') {
+      intervalSec = clampInterval(el.value);
+      writeLocalPrefs();
+      scheduleWhisper(intervalMs());
+      renderPanel();
+      return;
+    }
+    if (act === 'lang') {
+      var kind = el.getAttribute('data-kind');
+      var code = normLang(el.getAttribute('data-v'), 'zh');
+      if (kind === 'voice') voiceLang = code;
+      else if (kind === 'sub') subLang = code;
+      else menuLang = code;
+      writeLocalPrefs();
+      renderPanel();
+      return;
+    }
+    if (act === 'scale') {
+      scalePref = clampScale(Number(el.getAttribute('data-v')));
+      writeLocalPrefs();
+      applyScale(scalePref);
+      renderPanel();
+      return;
+    }
+    if (act === 'skin') {
+      applySkin(el.getAttribute('data-v'));
+      renderPanel();
+      return;
+    }
+    if (act === 'line') {
+      panelPickLine(Number(el.getAttribute('data-idx')), !!el.checked);
+      return;
+    }
+    if (act === 'lines-all' || act === 'lines-none') {
+      if (act === 'lines-all') allowedLines = null;
+      else {
+        allowedLines = {};
+        for (var n = 0; n < lineList.length; n++) allowedLines[lineList[n].index] = false;
+      }
+      writeLocalPrefs();
+      renderPanel();
+      return;
+    }
+    if (act === 'weather-loc') {
+      if (panelBusy) return;
+      panelBusy = true;
+      readWeather({ fresh: true, geo: true }).then(function () {
+        panelBusy = false;
+        renderPanel();
+      }).catch(function () {
+        panelBusy = false;
+        renderPanel();
+      });
+      return;
+    }
+    if (act === 'weather-today') {
+      speakWeather({ geo: !weatherGeo });
+      return;
+    }
+  }
+
+  function closeSettingsOverlay() {
+    if (panelEl && panelEl.parentNode) panelEl.parentNode.removeChild(panelEl);
+    panelEl = null;
+  }
+
+  function openSettingsOverlay(section) {
+    panelSection = section === 'lang' || section === 'scale' ? section : 'voice';
+    ensurePanelStyles();
+    if (panelEl) { renderPanel(); return; }
+    panelEl = document.createElement('div');
+    panelEl.id = PANEL_ID;
+    panelEl.addEventListener('mousedown', function (event) {
+      if (event.target === panelEl) closeSettingsOverlay();
+    });
+    panelEl.innerHTML = [
+      '<div class="cv-card">',
+      '<div class="cv-head"><span class="cv-title">哥伦比娅 · 设置<i>右键桌宠可再次打开</i></span>',
+      '<button class="cv-x" data-act="close" aria-label="关闭">×</button></div>',
+      '<div class="cv-body" id="cv-body"></div>',
+      '<div class="cv-foot">改动即时生效 · 只记在本机偏好里</div>',
+      '</div>',
+    ].join('');
+    panelEl.addEventListener('click', panelClick);
+    document.body.appendChild(panelEl);
+    renderPanel();
+    function onKey(ev) {
+      if (ev.key === 'Escape') { document.removeEventListener('keydown', onKey); closeSettingsOverlay(); }
+    }
+    document.addEventListener('keydown', onKey);
+  }
+
   /**
-   * 菜单里的「打开设置」：把 DSH 窗口叫到前台，再给主题宿主递一个序号，
-   * 页面里的主题客户端轮询到就会把「哥伦比娅 · 桌宠语音」浮层弹出来。
+   * 菜单里的「打开设置」：直接用桌宠内置面板。
+   * 以前把请求转给主题宿主再弹主题的面板，主题关掉/没装时这条路就断了；
+   * 内置面板不依赖任何宿主，主题装没装都能开。
    */
   function openSettingsPanel(section) {
+    var target = section === 'lang' || section === 'scale' || section === 'whisper' ? section : 'voice';
     try {
-      if (window.petBridge && typeof window.petBridge.openDshSite === 'function') {
-        window.petBridge.openDshSite(ORIGIN);
-      }
-    } catch (error) {
-      console.warn('[columbina-voice] 唤起 DSH 窗口失败', error);
-    }
-    var url = ORIGIN + '/columbina/pet-voice/open';
-    try {
-      fetch(url, {
-        method: 'POST',
-        mode: 'no-cors',
-        headers: { 'Content-Type': 'text/plain' },
-        body: JSON.stringify({ section: section || 'voice' }),
-      }).catch(function () {});
+      openSettingsOverlay(target);
       return true;
     } catch (error) {
-      console.warn('[columbina-voice] 通知宿主失败', error);
+      console.warn('[columbina-voice] 打开设置面板失败', error);
       return false;
     }
   }
