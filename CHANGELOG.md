@@ -12,6 +12,16 @@
 
 # 更新日志
 
+## 1.1.0 — 2026-10
+
+包体瘦身与共存体验。
+
+- **语音包外置**：`runtime/electron-helper/voice/official`（约 33 MB，76 句 × 3 语种）不再随包发布；首次启动检测缺失时后台自动下载到安装目录，失败则按「无原声」降级（切片兜底仍在包内）。手动补装：`node node_modules/dsh-columbina-pet/scripts/ensure-voice.mjs`，可用 `DSH_VOICE_PACK_FILE` 指定本地包。
+- **旧前缀默认关闭**：`/dsh-pet-7340` 兼容路由改为显式开启（`DSH_PET_LEGACY_ROUTE=1`）。与上游 `dsh-pet` 同装时默认零冲突，也不再尝试抢占它的用户目录。
+- **上游检测放宽**：除 `dsh-pet` 外，`dsh-pet-*`（如 `dsh-pet-live2d`）同装也按「共存模式」处理，避免别人的前缀注册被我们打断。
+- `/healthz` 增加 `voicePack`（`active` / `dir` / `downloading`）。
+- 附：`scripts/shrink-webm.mjs` 用于把换装 webm 重编码到更小体积；**本版本的 webm 不做改动**（本机 ffmpeg 构建无法写 alpha 侧信道，重编码会丢透明通道，故保留原件）。
+
 ## 1.0.3 — 2026-10
 
 对 1.0.2 的修补（由第三方复现报告驱动）：
