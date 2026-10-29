@@ -1566,11 +1566,11 @@
 
   function panelStyles() {
     return [
-      '#' + PANEL_ID + '{position:fixed;inset:0;z-index:2147483000;display:flex;align-items:center;justify-content:center;',
+      '#' + PANEL_ID + '{position:fixed;inset:0;z-index:2147483000;',
       'background:transparent;pointer-events:none;font-family:"Microsoft YaHei","PingFang SC","Segoe UI",sans-serif;color:#EFE8FF;',
       'animation:cv-in .16s ease-out}',
       '@keyframes cv-in{from{opacity:0}to{opacity:1}}',
-      '#' + PANEL_ID + ' .cv-card{pointer-events:auto;width:min(392px,calc(100vw - 16px));max-height:calc(100vh - 16px);display:flex;flex-direction:column;border-radius:18px;',
+      '#' + PANEL_ID + ' .cv-card{pointer-events:auto;position:absolute;left:50%;transform:translateX(-50%);top:8px;width:min(392px,calc(100vw - 16px));max-height:calc(100vh - 16px);display:flex;flex-direction:column;border-radius:18px;',
       'background:rgba(24,18,36,.97);border:1px solid rgba(160,132,230,.30);',
       'box-shadow:0 26px 70px rgba(0,0,0,.52),inset 0 1px 0 rgba(255,255,255,.05);overflow:hidden}',
       '#' + PANEL_ID + ' .cv-head{display:flex;align-items:center;gap:8px;padding:11px 14px 8px;',
@@ -1824,6 +1824,28 @@
     }
   }
 
+
+  // 桌宠窗口可能有一截落在屏幕外（宠物贴底时最明显）：卡片按"窗口在屏上的可见部分"定高，
+  // 并把顶部对齐到可见区顶端，避免面板下半截跑到屏幕外面。
+  function fitPanelCard() {
+    if (!panelEl) return;
+    var card = panelEl.querySelector('.cv-card');
+    if (!card) return;
+    var sy = Number(window.screenY) || 0;
+    var inner = Number(window.innerHeight) || 0;
+    var outer = Number(window.outerHeight) || inner;
+    var availH = (window.screen && Number(window.screen.availHeight)) || (sy + outer);
+    if (!inner) return;
+    var visTop = Math.max(0, sy);
+    var visBottom = Math.min(availH, sy + outer);
+    var chrome = Math.max(0, outer - inner);
+    var topInWindow = Math.max(4, Math.min(visTop - sy + chrome / 2 + 6, availH - sy - 120));
+    var height = Math.max(96, visBottom - (sy + topInWindow) - 10);
+    card.style.top = Math.round(topInWindow) + 'px';
+    card.style.maxHeight = Math.round(height) + 'px';
+  }
+  window.__columbinaPanelFit = fitPanelCard;
+
   function closeSettingsOverlay() {
     if (panelEl && panelEl.parentNode) panelEl.parentNode.removeChild(panelEl);
     panelEl = null;
@@ -1854,7 +1876,9 @@
       if (ev.key === 'Escape') { document.removeEventListener('keydown', onKey); closeSettingsOverlay(); }
     }
     document.addEventListener('keydown', onKey);
+    window.addEventListener('resize', fitPanelCard);
     setPanelBusy(true);
+    fitPanelCard();
     if (section === 'scale') {
       var body = panelEl.querySelector('#cv-body');
       var scaleSec = body && body.querySelector('[data-sec="scale"]');
