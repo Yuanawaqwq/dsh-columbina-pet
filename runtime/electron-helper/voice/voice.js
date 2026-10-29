@@ -1871,6 +1871,25 @@
     card.style.maxHeight = Math.round(box.height) + 'px';
   }
 
+  // 窗口被拖动/漫游移动后：只把卡片夹回可见区，不重置用户自己拖好的位置
+  function reclampPanelCard() {
+    if (!panelEl) return;
+    var card = panelEl.querySelector('.cv-card');
+    if (!card) return;
+    var box = panelVisibleBox();
+    var left = parseFloat(card.style.left);
+    var top = parseFloat(card.style.top);
+    if (!isFinite(left)) left = box.left;
+    if (!isFinite(top)) top = box.top;
+    card.style.width = Math.round(Math.min(392, box.width)) + 'px';
+    card.style.maxHeight = Math.round(box.height) + 'px';
+    var maxLeft = box.left + box.width - card.offsetWidth;
+    var room = Math.max(0, box.height - card.offsetHeight);
+    var slack = room >= 24 ? room : Math.min(Math.round(card.offsetHeight / 3), Math.max(24, Math.round(box.height * 0.25)));
+    card.style.left = Math.round(Math.max(box.left, Math.min(left, Math.max(box.left, maxLeft)))) + 'px';
+    card.style.top = Math.round(Math.max(box.top, Math.min(top, box.top + slack))) + 'px';
+  }
+
   // 标题栏拖拽：在可见区内移动卡片（不改窗口位置）
   function makeCardDraggable(card) {
     var head = card.querySelector('.cv-head');
@@ -1889,7 +1908,11 @@
       if (!drag) return;
       var box = panelVisibleBox();
       var maxLeft = box.left + box.width - card.offsetWidth;
-      var maxTop = box.top + box.height - Math.min(card.offsetHeight, box.height);
+      // 竖直方向：卡片常常和可见区一样高（内容多时），按"整卡平移"算会一格都拖不动。
+      // 这里保证至少 24px 的可拖余量（最多放宽到卡高的 1/3），拖出去的部分由卡片自身滚动兜底。
+      var room = Math.max(0, box.height - card.offsetHeight);
+      var slack = room >= 24 ? room : Math.min(Math.round(card.offsetHeight / 3), Math.max(24, Math.round(box.height * 0.25)));
+      var maxTop = box.top + slack;
       var nx = Math.max(box.left, Math.min(drag.left + event.clientX - drag.px, Math.max(box.left, maxLeft)));
       var ny = Math.max(box.top, Math.min(drag.top + event.clientY - drag.py, Math.max(box.top, maxTop)));
       card.style.left = Math.round(nx) + 'px';
@@ -1933,6 +1956,11 @@
     }
     document.addEventListener('keydown', onKey);
     window.addEventListener('resize', fitPanelCard);
+    var moveTimer = null;
+    window.addEventListener('move', function () {
+      if (moveTimer) clearTimeout(moveTimer);
+      moveTimer = setTimeout(reclampPanelCard, 120);
+    });
     var cardEl = panelEl.querySelector('.cv-card');
     if (cardEl) makeCardDraggable(cardEl);
     setPanelBusy(true);

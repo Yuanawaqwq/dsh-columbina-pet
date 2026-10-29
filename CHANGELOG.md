@@ -12,6 +12,15 @@
 
 # 更新日志
 
+## 1.1.5 — 2026-10
+
+语音包落到包外，面板几何跟着窗口走。
+
+- **语音包装到外置目录**：`~/.dsh/columbina-pet/voice/official`，`dsh plugin add` 换包不再重下 33 MB；旧的包内目录启动时自动迁移一次
+- **下载失败可见**：`/healthz.voicePack` 新增 `lastError` / `lastAttempt`，不再只有一句 `active:false`
+- **镜像兜底**：`ensure-voice.mjs` 依次尝试 GitHub → `ghfast.top` → `gh-proxy.com`，仍用 `voicePack.sha256` 校验
+- **面板跟随窗口移动**：桌宠被拖动/漫游后重算可见区，面板不会留在屏外；竖直方向保留可拖余量（不再只能左右拖）
+
 ## 1.1.4 — 2026-10
 
 设置面板与右键菜单的边界问题收尾，语音包资产补发。
