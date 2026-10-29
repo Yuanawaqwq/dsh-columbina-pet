@@ -225,6 +225,7 @@ class PetSprite {
     this.ac = ac;
     // 级联菜单新增面板、聊天输入增长都可能在鼠标停住时发生，不能只等下一次 mousemove。
     this.inputRegionResize = new ResizeObserver(() => this.syncInputRegions());
+    this.settingsPanelOpen = false;
     this.inputRegionElements = new Set();
     this.inputRegionMutation = new MutationObserver(() => this.syncInputRegions());
     this.inputRegionMutation.observe(document.body, { childList: true, subtree: true });
@@ -1450,7 +1451,7 @@ class PetSprite {
   inputBusy() {
     // 可点的余额气泡是第四个来源：它同样长在窗口里、同样靠窗口级 click 触发，而它悬在宠物头顶的
     // 余量区——那一块平时是穿透的，正需要借 busy + 控件矩形把它"圈"出来（见 syncInputRegions）。
-    return this.dragState.active || this.menuOpen || this.chatOpen || this.balanceClickable();
+    return this.dragState.active || this.menuOpen || this.chatOpen || this.balanceClickable() || this.settingsPanelOpen === true;
   }
 
   /**
@@ -1481,7 +1482,7 @@ class PetSprite {
     const rects = [];
     // 控件矩形 = 主进程允许接收点击的区域（矩形外的余量区继续穿透）。
     // .pet-bubble.is-clickable 是余额气泡的展开态：它悬在宠物头顶的余量区，不登记就点不到。
-    const controls = [...document.querySelectorAll('.dsh-pet-menu-column, .dsh-pet-chat, .pet-bubble.is-clickable')];
+    const controls = [...document.querySelectorAll('.dsh-pet-menu-column, .dsh-pet-chat, .pet-bubble.is-clickable, #columbina-voice-panel .cv-card')];
     for (const el of this.inputRegionElements) {
       if (!controls.includes(el)) {
         this.inputRegionResize.unobserve(el);
@@ -1575,6 +1576,12 @@ class PetSprite {
     // 拖拽中窗口逐帧跟随光标、指针相对窗口坐标会有帧级抖动——强制保持可交互，绝不翻转（翻转会断拖拽）
     if (this.dragState.active) {
       this.setInteractive(true);
+      return;
+    }
+    // 设置面板打开：保持忙碌态，让主进程只把卡片矩形圈成可点区域（其余照旧穿透，不挡桌面滚动）
+    if (this.settingsPanelOpen) {
+      this.syncInputBusy();
+      this.setTip(false);
       return;
     }
     // 右键菜单/对话弹窗开启：整窗保持可交互（悬停菜单项/点输入框都不触发穿透翻转）；关闭后恢复命中区判定
