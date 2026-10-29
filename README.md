@@ -210,6 +210,7 @@ dsh-columbina-pet/
 
 - 上游：[dsh-pet](https://github.com/PC2005-cloud/dsh-pet)（MIT，Copyright © 2026 PC2005-cloud），本仓库的骨架、runtime 与大部分工程实现来自它。
 - 角色与素材：详见 [NOTICE.md](NOTICE.md)。
+- 2D 形象：「官方表情包」版由本项目整理；「去眼罩 / 睁眼 / 闭眼」三套由 B站 UP 主 [@渲琳](https://space.bilibili.com/39497551) 使用 EmoteLab 制作，原作见 [【EmoteLab】捏了哥伦比娅和桑多涅！](https://www.bilibili.com/video/BV1gSczzjEub)。感谢作者分享，如作者希望下架请联系移除。
 - 主题与设置面板：[dsh-columbina-theme](https://github.com/Columbina-sn/dsh-columbina-theme)。
 
 ## License
