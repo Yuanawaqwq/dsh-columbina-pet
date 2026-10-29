@@ -1,0 +1,17 @@
+# 依赖与构建残留
+node_modules/
+*.bak
+*.bak-*
+*.orig
+*.rej
+
+# 系统垃圾
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 临时文件
+*.log
+*.tmp
+*.swp
+*~

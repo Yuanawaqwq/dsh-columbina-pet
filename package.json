@@ -1,0 +1,105 @@
+{
+  "name": "dsh-columbina-pet",
+  "version": "1.0.0",
+  "description": "哥伦比娅 2D live 桌宠 —— 四套形象、76 句三语原声台词、天气播报、真实物理。DeepSeek Harness 插件（基于 dsh-pet 0.3.8，已移除 3D 形象切换）。",
+  "icon": "assets/logo.png",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "desktop-pet",
+    "genshin",
+    "columbina",
+    "live2d",
+    "floating-widget",
+    "cordis",
+    "react"
+  ],
+  "author": "Columbina-sn",
+  "homepage": "https://github.com/Columbina-sn/dsh-columbina-pet#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Columbina-sn/dsh-columbina-pet.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Columbina-sn/dsh-columbina-pet/issues"
+  },
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./client": {
+      "types": "./lib/types/client/index.d.ts",
+      "default": "./lib/client.js"
+    },
+    "./src/*": "./src/*",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "src",
+    "assets/webm",
+    "assets/memes",
+    "assets/fonts",
+    "assets/pic",
+    "assets/config.jsonc",
+    "assets/logo.png",
+    "runtime/electron-helper",
+    "scripts/ensure-electron.mjs",
+    "cordis.patch.yml",
+    "README.md",
+    "NOTICE.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "ensure:electron": "node scripts/ensure-electron.mjs"
+  },
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "0.135.0",
+    "@electron-internal/extract-zip": "^1.0.5",
+    "@electron/get": "^5.1.0",
+    "openai": "7.39.0",
+    "zod": "4.6.7"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "compatibility": {
+      "dshReleases": {
+        "0.1.7-rc.2": "incompatible",
+        "0.2.0-rc.1": "compatible",
+        "0.2.0-rc.2": "compatible",
+        "0.2.1-rc.2": "compatible"
+      }
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-connection"
+      ],
+      "platform": "web"
+    }
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.4",
+    "@deepseek-ai/dsh-agent-default-model": "^0.2.0-rc.1",
+    "@deepseek-ai/dsh-client-connection": "^0.2.0-rc.1",
+    "@deepseek-ai/dsh-client-ui-primitives": "^0.2.0-rc.1",
+    "@deepseek-ai/dsh-client-ui-slots": "^0.2.0-rc.1",
+    "@deepseek-ai/dsh-commands": "^0.2.0-rc.1",
+    "@deepseek-ai/dsh-credentials": "^0.2.0-rc.1",
+    "@deepseek-ai/dsh-home-paths": "^0.2.0-rc.1",
+    "@deepseek-ai/dsh-host-webserver": "^0.2.0-rc.1",
+    "@deepseek-ai/dsh-llm": "^0.2.0-rc.1",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  }
+}
