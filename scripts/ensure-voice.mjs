@@ -85,7 +85,13 @@ function candidates() {
 
 async function fetchTo(url) {
 	console.log(`[voice] 下载语音包 ${url}`);
-	const res = await fetch(url, { redirect: "follow" });
+	const timeoutMs = Number(process.env.DSH_COLUMBINA_VOICE_TIMEOUT_MS) || 900000;
+	let res;
+	try {
+		res = await fetch(url, { redirect: "follow", signal: AbortSignal.timeout(timeoutMs) });
+	} catch (error) {
+		throw new Error(`下载请求失败或超时（${Math.round(timeoutMs / 1000)}s）：${error && error.message ? error.message : String(error)}`);
+	}
 	if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
 	const total = Number(res.headers.get("content-length")) || 0;
 	const chunks = [];

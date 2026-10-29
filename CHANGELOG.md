@@ -12,6 +12,16 @@
 
 # 更新日志
 
+## 1.1.7 — 2026-10
+
+1.1.6 的语音路由修了渲染端、漏了宿主端，两处拼错让原声继续 404。这一版按复现反馈逐行修掉。
+
+- `lib/index.js` 的 `voice` 路由：`rest` 里已经带一层 `official`，后接的目录本身又以 `official` 结尾，拼成 `…/official/official/…` 必然 404；改为先剥掉重复段再解析
+- 同一处原来直接 `return sendFile(voiceFile)`，函数签名是 `(res, file, contentType, req)`，等于把路径当响应对象；改为返回 `{ kind: "file", file, contentType }` 描述符，交给统一出口发
+- `.ogg` 补进音频 MIME（`audio/ogg`），不再落到 `application/octet-stream`
+- `scripts/ensure-voice.mjs`：`fetchTo()` 增加 `AbortSignal.timeout`（默认 15 分钟，可由 `DSH_COLUMBINA_VOICE_TIMEOUT_MS` 覆盖），连接卡死不会再永久 `downloading: true`
+- 移除 `lib/standalone.js`：上游遗留的独立运行打包产物，本 fork 从未同步，也没有任何入口引用它；需要独立模式请用 `src/standalone` 重新构建
+
 ## 1.1.6 — 2026-10
 
 修掉 1.1.5 在干净安装下的回归：语音包外置了，播放端却还在按包内相对路径找文件。
