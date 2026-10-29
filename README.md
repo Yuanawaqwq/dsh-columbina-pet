@@ -87,7 +87,7 @@ npm install dsh-columbina-pet
 
 ```bash
 cd ~/.dsh/profiles/<你的 profile>
-npm install github:Columbina-sn/dsh-columbina-pet
+npm install github:Yuanawaqwq/dsh-columbina-pet
 ```
 
 ### 从本地源码安装

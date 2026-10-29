@@ -15,14 +15,14 @@
     "cordis",
     "react"
   ],
-  "author": "Columbina-sn",
-  "homepage": "https://github.com/Columbina-sn/dsh-columbina-pet#readme",
+  "author": "Yuanawaqwq",
+  "homepage": "https://github.com/Yuanawaqwq/dsh-columbina-pet#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Columbina-sn/dsh-columbina-pet.git"
+    "url": "git+https://github.com/Yuanawaqwq/dsh-columbina-pet.git"
   },
   "bugs": {
-    "url": "https://github.com/Columbina-sn/dsh-columbina-pet/issues"
+    "url": "https://github.com/Yuanawaqwq/dsh-columbina-pet/issues"
   },
   "type": "module",
   "main": "lib/index.js",

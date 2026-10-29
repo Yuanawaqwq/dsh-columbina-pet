@@ -7,7 +7,7 @@
 插件骨架、runtime、构建脚本与文档以 MIT 许可发布，见 [LICENSE](LICENSE)。
 
 - Copyright © 2026 PC2005-cloud（上游 [dsh-pet](https://github.com/PC2005-cloud/dsh-pet)）
-- Copyright © 2026 Columbina-sn（dsh-columbina-pet：2D 专用分支、语音与天气扩展）
+- Copyright © 2026 Yuanawaqwq（dsh-columbina-pet：2D 专用分支、语音与天气扩展）
 
 ## 2. 《原神》角色相关素材 —— 权利归米哈游
 
