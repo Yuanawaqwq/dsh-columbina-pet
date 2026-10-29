@@ -135,6 +135,8 @@ node scripts/migrate-assets.mjs --move
 curl http://127.0.0.1:<DSH 端口>/dsh-pet-7340/healthz
 ```
 
+`assetRoots.externalActive` 为 `true` 且 `externalFileCount > 0` 时，说明外置素材已经命中（1.0.3+）。
+
 ### 第一次启动
 
 首次使用需要 Electron 运行时（约 100 MB，从 npmmirror 下载，可用环境变量换源）：

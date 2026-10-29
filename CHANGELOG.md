@@ -1,5 +1,15 @@
 # 更新日志
 
+## 1.0.3 — 2026-10
+
+对 1.0.2 的修补（由第三方复现报告驱动）：
+
+- `package.json#files` 改为收录整个 `scripts/`：此前 `scripts/migrate-assets.mjs` **没有进 tarball**，从 npm 包安装的用户拿不到素材迁移脚本。
+- `lib/client.js` 内置 3 行幂等守卫（`__dshColumbinaClientBooted`）：DSH 启动期若把同一份 bundle 执行两次，不再重复注册而抛 `duplicate factory registration`。
+- 静态素材响应加 `ETag` + `If-None-Match` / 304：替换外置素材后不会再被浏览器缓存卡旧文件。
+- `/healthz` 增加 `assetRoots.externalActive` 与 `assetRoots.externalFileCount`，迁移是否生效一眼可见。
+- 顺带说明：`lib/standalone.js` 仍停留在 1.0.1 的构建产物，本次未同步（该形态暂不维护）。
+
 ## 1.0.2 — 2026-10
 
 启动与诊断加固（不改变桌宠行为）：
