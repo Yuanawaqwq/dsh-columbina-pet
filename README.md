@@ -54,7 +54,20 @@
 
 ### 通过 DSH 插件管理安装（推荐）
 
-在 DSH 的插件管理界面选择本包（或安装本地路径），启用后**完整退出 DSH 再打开**。
+1. 打开 DeepSeek Harness 桌面端 → 设置 → 插件 → **添加插件**
+2. 在输入框里粘贴仓库地址：
+
+   ```
+   github:Yuanawaqwq/dsh-columbina-pet
+   ```
+
+   也可以贴完整地址 `https://github.com/Yuanawaqwq/dsh-columbina-pet`。
+3. 安装完成后**完整退出 DSH 再打开**（关窗口、刷新页面都不算重启）。
+4. 第一次桌宠没出现，说明本机还没有 Electron 运行时：按提示再重启一次，或手动运行
+
+   ```bash
+   node node_modules/dsh-columbina-pet/scripts/ensure-electron.mjs
+   ```
 
 ### 手动装进 profile
 
