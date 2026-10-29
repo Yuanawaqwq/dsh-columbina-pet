@@ -116,6 +116,35 @@ npm install file:/path/to/dsh-columbina-pet
 
 > 说明：仓库自带约 150 MB 的 2D 形象与语音素材，打包后超过 180 MB。npm 公共仓库对包体积有上限，建议用上面的 GitHub 安装方式，或发布 GitHub Release 附 tar 包；也欢迎你替换成自己的素材后瘦身再上架。
 
+### 国内网络加速（可选）
+
+先看一眼自己走哪条线更快（数字越小越快）：
+
+```bash
+curl -o /dev/null -s -w 'github %{time_total}s
+' https://github.com
+curl -o /dev/null -s -w 'npmmirror %{time_total}s
+' https://registry.npmmirror.com
+```
+
+如果 `github` 明显慢于 `npmmirror`，按下面的镜像走：
+
+| 环节 | 常规地址 | 国内镜像写法 |
+| --- | --- | --- |
+| 插件安装 | `github:Yuanawaqwq/dsh-columbina-pet` | `https://ghfast.top/https://github.com/Yuanawaqwq/dsh-columbina-pet`（或把前缀换成 `https://gh-proxy.com/`） |
+| 依赖安装 | `npm install` | `npm install --registry=https://registry.npmmirror.com` |
+| Electron 运行时 | `node scripts/ensure-electron.mjs` | 先设 `ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/`，再运行同一命令 |
+| 语音包（外置素材） | `node scripts/ensure-voice.mjs` | `DSH_VOICE_PACK_URL=https://ghfast.top/https://github.com/Yuanawaqwq/dsh-columbina-pet/releases/download/v1.1.0/dsh-columbina-pet-voice-1.1.0.tar.gz node scripts/ensure-voice.mjs` |
+
+Windows PowerShell 里设置环境变量：
+
+```powershell
+$env:ELECTRON_MIRROR = "https://npmmirror.com/mirrors/electron/"
+$env:DSH_VOICE_PACK_URL = "https://ghfast.top/https://github.com/Yuanawaqwq/dsh-columbina-pet/releases/download/v1.1.0/dsh-columbina-pet-voice-1.1.0.tar.gz"
+```
+
+> 镜像都是第三方服务，可用性会变；下载失败就换一个前缀，或直接走仓库自带的 `dsh-columbina-pet-*.tar.gz`（Release 附件里另有一份完整包）。
+
 ### 素材外置（可选，1.0.2+）
 
 素材可以从插件目录里搬出去，放在 `~/.dsh/columbina-pet/assets/`：宿主按「外置根优先、包内兜底」读取，形象、表情包、字体、图片与 `config.jsonc` 都适用。
