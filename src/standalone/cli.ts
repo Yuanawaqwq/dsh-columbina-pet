@@ -141,7 +141,7 @@ async function run(logger: StandaloneLogger, options: { port: number }): Promise
     '',
     '===== dsh-pet 独立模式（不需要 DSH）=====',
     `  插件        dsh-pet@${packageVersion(packageRoot)}  ${packageRoot}`,
-    `  路由        http://127.0.0.1:${server.port}/dsh-pet-7340/`,
+    `  路由        http://127.0.0.1:${server.port}/dsh-columbina-pet-7340/`,
     `  配置        ${configSource}`,
     `  宠物        ${describePets(pets)}`,
     desktopVisible.length === 0

@@ -78,7 +78,7 @@ export function makeFactory(): (require: (mod: string) => any) => any {
       //   progress(petId) 播放进度（位置/总长/暂停/缓冲）；桌面端没有这条路，也没有 Cordis 容器
       //
       // **只开读**：让它播什么、停什么仍走 HTTP 接口，避免控制出现两条通道（契约分叉）。
-      // 服务名带 `7340` 后缀，与 HTTP 路由 `/dsh-pet-7340` 同源：DSH 生态里的桌宠插件有几百个，
+      // 服务名带 `7340` 后缀，与 HTTP 路由 `/dsh-columbina-pet-7340` 同源：DSH 生态里的桌宠插件有几百个，
       // 裸名（petPose / petApi）撞名概率太高，而 Cordis 里同名服务二次 provide 会**直接抛错**、
       // 让整个客户端插件加载失败（overlay 与设置页全都不注册）。消费者用
       // `ctx.get('petApi7340')` 探测——拿不到就是老版本，不抛。

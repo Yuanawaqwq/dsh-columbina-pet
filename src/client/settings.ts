@@ -2,9 +2,9 @@
  * 桌宠配置管理设置页（settings.section 插槽，id: pet-config）
  *
  * - 多开：管理多个桌宠，每个宠物独立 id/name/size/位置（corner + marginX/Y）
- * - 数据流：设置页持有「main 条目宠物列表」→ 保存时全量 PUT /dsh-pet-7340/config
+ * - 数据流：设置页持有「main 条目宠物列表」→ 保存时全量 PUT /dsh-columbina-pet-7340/config
  *   （写用户层 main-config.jsonc = 可编辑层，文件宠物永不回写）
- * - 数据入口：配置由 host readAllConfig 合并为**成品**（GET /dsh-pet-7340/config），
+ * - 数据入口：配置由 host readAllConfig 合并为**成品**（GET /dsh-columbina-pet-7340/config），
  *   设置页只读 main 条目（可编辑）+ 统计文件宠物条数，不做任何校验
  * - 即时生效：保存/同步后用 host 返回的**成品聚合**调用 petBridge.reload，
  *   容器走同一份 flattenConfigPets 重新渲染，无需刷新页面（设置页不自己拼任何条目级字段）
@@ -1002,7 +1002,7 @@ export function makePetConfigSection(rt: {
       profile?: string;
     }>(null);
     useEffect(() => {
-      fetch('/dsh-pet-7340/config/meta')
+      fetch('/dsh-columbina-pet-7340/config/meta')
         .then((r) => (r.ok ? r.json() : null))
         .then((p) => setPaths(p))
         .catch(() => console.warn('[dsh-pet] 读取配置文件路径失败'));
@@ -1089,7 +1089,7 @@ export function makePetConfigSection(rt: {
     useEffect(() => {
       let alive = true;
       const controller = new AbortController();
-      fetch('/dsh-pet-7340/config', { signal: controller.signal })
+      fetch('/dsh-columbina-pet-7340/config', { signal: controller.signal })
         .then((r) => {
           if (!r.ok) throw new Error('HTTP ' + r.status);
           return r.json();
@@ -1111,7 +1111,7 @@ export function makePetConfigSection(rt: {
     // 候选模型清单：一次性拉取（下拉框数据源）。失败只提示、不阻塞——已有配置值照常显示与保存。
     useEffect(() => {
       let alive = true;
-      fetch('/dsh-pet-7340/models')
+      fetch('/dsh-columbina-pet-7340/models')
         .then((r) => (r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status))))
         .then((d) => {
           if (!alive) return;
@@ -1270,7 +1270,7 @@ export function makePetConfigSection(rt: {
           font: font,
         };
         // force === true（用户在损坏弹窗里点了确认）：带 ?force=1 才允许按白名单重建损坏文件
-        const res = await fetch('/dsh-pet-7340/config' + (force === true ? '?force=1' : ''), {
+        const res = await fetch('/dsh-columbina-pet-7340/config' + (force === true ? '?force=1' : ''), {
           method: 'PUT',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify(body),
@@ -1330,7 +1330,7 @@ export function makePetConfigSection(rt: {
         // 同步用户层：POST 把内置默认配置（原文，含注释）整份写入用户配置，响应体同样是成品聚合
         // （此时 main 条目 = 内置默认宠物列表），与保存走同一条路——不再"改完再拉一次"，
         // 也就没有中间失败态
-        const res = await fetch('/dsh-pet-7340/config', { method: 'POST' });
+        const res = await fetch('/dsh-columbina-pet-7340/config', { method: 'POST' });
         if (!res.ok) throw new Error('HTTP ' + res.status);
         const merged = (await res.json()) as Record<string, Record<string, unknown>>;
         applyConfig(merged);

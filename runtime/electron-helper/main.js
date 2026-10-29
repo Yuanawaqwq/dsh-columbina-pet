@@ -19,7 +19,7 @@
  *
  * 数据通道（bridge 模式，DSH_PET_BRIDGE=1 由宿主注入）：
  * 渲染端不再直连宿主 WebServer（DSH Desktop 2.0.3+ 的浏览器访问闸门会拦无令牌裸 HTTP）——
- * 本进程注册自定义 scheme `dsh-pet-bridge://`，protocol.handle 收到渲染端请求后
+ * 本进程注册自定义 scheme `dsh-columbina-pet-bridge://`，protocol.handle 收到渲染端请求后
  * 经 stdin/stdout JSON 行协议转发宿主（helper-process.ts 的 BridgeHandler），
  * 宿主用与 HTTP 路由同一份 handlePetRoute 应答；素材应答带文件绝对路径，本进程读盘返回。
  * 无 DSH_PET_BRIDGE（手动 start-desktop / 开发流）时保持旧路径：渲染端直接 HTTP 访问宿主。
@@ -73,7 +73,7 @@ app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 // 显式定名：Helper 是被 `electron.exe <main.js>` 直接拉起的，Electron 取不到 app 名会回落成
 // "Electron"，userData 便落到 %APPDATA%\Electron —— 那是所有这么跑的 Electron 脚本的公共目录，
 // 我们的 DPI 缓存与 Chromium profile 都会和别人混在一起。必须赶在任何 getPath('userData') 之前设。
-app.setName('dsh-pet-electron-helper');
+app.setName('dsh-columbina-pet-helper');
 
 /** DPI 探测子进程模式：不建窗口，只把主屏 scaleFactor 打到 stdout 就退出（见 probePrimaryScale） */
 const DPI_PROBE = process.env.DSH_PET_DPI_PROBE === '1';
@@ -259,7 +259,7 @@ function petScale() {
   });
 }
 
-/** bridge 模式：DSH_PET_BRIDGE=1（宿主注入）。开启时注册 dsh-pet-bridge scheme + 管道转发 */
+/** bridge 模式：DSH_PET_BRIDGE=1（宿主注入）。开启时注册 dsh-columbina-pet-bridge scheme + 管道转发 */
 const BRIDGE = process.env.DSH_PET_BRIDGE === '1';
 
 /** 「打开网站」这一项的去向（宿主按自身形态注入）：
@@ -267,14 +267,14 @@ const BRIDGE = process.env.DSH_PET_BRIDGE === '1';
  *  'site'    = dsh web / 独立模式 / 手写 start-desktop（无该变量）→ 原行为：默认浏览器打开站点。 */
 const OPEN_TARGET = process.env.DSH_PET_OPEN_TARGET === 'desktop' ? 'desktop' : 'site';
 /** 协议行前缀（与 helper-process.ts 的 BRIDGE_PREFIX 一致） */
-const BRIDGE_PREFIX = 'dsh-pet-bridge:';
+const BRIDGE_PREFIX = 'dsh-columbina-pet-bridge:';
 
 if (BRIDGE) {
   // 自定义 scheme：standard（可解析 URL）+ secure（按 https 对待）+ supportFetchAPI（fetch 可用）
   // + stream（视频流）+ corsEnabled（让 CORS 规则生效，配合响应里的 ACAO 头放行 file:// 源页面）
   protocol.registerSchemesAsPrivileged([
     {
-      scheme: 'dsh-pet-bridge',
+      scheme: 'dsh-columbina-pet-bridge',
       privileges: {
         standard: true,
         secure: true,
@@ -411,7 +411,7 @@ function deskGeometry() {
 function createPetWindows() {
   const geo = deskGeometry();
   const area = geo.hull;
-  const configUrl = process.env.DSH_PET_CONFIG_URL || 'http://127.0.0.1:3080/dsh-pet-7340/config';
+  const configUrl = process.env.DSH_PET_CONFIG_URL || 'http://127.0.0.1:3080/dsh-columbina-pet-7340/config';
   const pets = petsFromEnv();
   const scale = petScale();
   for (const pet of pets) {
@@ -563,7 +563,7 @@ function createPetWindows() {
 }
 
 // ---------- bridge 协议（渲染端 custom scheme → 本进程 → 宿主 stdout JSON 行 + 本地回调） ----------
-// 渲染端的每个 fetch 都落到 dsh-pet-bridge://，protocol.handle 把请求以一行 JSON 写 stdout 转发宿主。
+// 渲染端的每个 fetch 都落到 dsh-columbina-pet-bridge://，protocol.handle 把请求以一行 JSON 写 stdout 转发宿主。
 // 宿主应答**不走近 0 号管道**：Electron 主进程在 Windows 上收不到 piped stdin（electron#4218），
 // 所以本进程开一个 127.0.0.1 随机端口 HTTP 回调（DSH 闸门只拦 DSH WebServer 路由，管不到这里）；
 // 请求行携带回调 URL，宿主处理完 POST 应答回来，按 id 唤醒等待中的请求。
@@ -638,7 +638,7 @@ function startBridgeCallback() {
 
 /** 处理一个渲染端请求：拼宿主请求行 → 等应答 → 组装 Response（素材读盘） */
 async function handleBridgeRequest(request) {
-  const url = new URL(request.url); // dsh-pet-bridge://dsh-pet/dsh-pet-7340/...
+  const url = new URL(request.url); // dsh-columbina-pet-bridge://dsh-pet/dsh-columbina-pet-7340/...
   const method = request.method || 'GET';
   let body;
   if (method === 'POST' || method === 'PUT') {
@@ -669,8 +669,8 @@ async function handleBridgeRequest(request) {
 // 菜单是静态的，但每次切换 display 都会让宿主重启本进程（syncDesktop），新进程按新配置重建菜单，
 // 所以这里不需要任何「重建菜单刷新勾选」的逻辑。
 
-const PET_ROUTE = '/dsh-pet-7340';
-const ORIGIN = new URL(process.env.DSH_PET_CONFIG_URL || 'http://127.0.0.1:3080/dsh-pet-7340/config').origin;
+const PET_ROUTE = '/dsh-columbina-pet-7340';
+const ORIGIN = new URL(process.env.DSH_PET_CONFIG_URL || 'http://127.0.0.1:3080/dsh-columbina-pet-7340/config').origin;
 const TRAY_PLATFORM = trayPlatform(process.platform);
 
 /** 与宿主 handlePetRoute 通信：bridge 模式走管道，手动 start-desktop 流退回 HTTP 直连 */
@@ -779,7 +779,7 @@ app.whenReady().then(() => {
 
   if (BRIDGE) {
     // 自定义 scheme 接住渲染端全部请求（配置/余额/碎碎念/广播/素材）
-    protocol.handle('dsh-pet-bridge', (request) =>
+    protocol.handle('dsh-columbina-pet-bridge', (request) =>
       handleBridgeRequest(request).catch((e) => {
         console.error('[dsh-pet-desktop-helper] bridge handler error:', String(e && e.message ? e.message : e));
         return new Response('dsh-pet: bridge error', {

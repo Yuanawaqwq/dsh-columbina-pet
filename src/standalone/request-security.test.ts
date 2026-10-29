@@ -90,8 +90,8 @@ test('only minimal health, settings shell and known media GET are public; public
     '/health',
     '/standalone-ai/',
     '/standalone-ai/settings.js',
-    '/dsh-pet-7340/thumb/main/idle.webm',
-    '/dsh-pet-7340/pic/memes/main/a.png',
+    '/dsh-columbina-pet-7340/thumb/main/idle.webm',
+    '/dsh-columbina-pet-7340/pic/memes/main/a.png',
   ]) {
     assert.equal(security.authorize(request({}, path), response() as unknown as ServerResponse), true, path);
     assert.equal(
@@ -101,10 +101,10 @@ test('only minimal health, settings shell and known media GET are public; public
     );
     assert.equal(security.authorize(request({}, path, 'POST'), response() as unknown as ServerResponse), false, path);
   }
-  for (const path of ['/standalone-ai/settings', '/dsh-pet-7340/whisper', '/dsh-pet-7340/chat', '/shutdown']) {
+  for (const path of ['/standalone-ai/settings', '/dsh-columbina-pet-7340/whisper', '/dsh-columbina-pet-7340/chat', '/shutdown']) {
     assert.equal(security.authorize(request({}, path), response() as unknown as ServerResponse), false, path);
   }
-  for (const path of ['/dsh-pet-7340/config', '/dsh-pet-7340/state']) {
+  for (const path of ['/dsh-columbina-pet-7340/config', '/dsh-columbina-pet-7340/state']) {
     assert.equal(security.authorize(request({}, path), response() as unknown as ServerResponse), true, path);
     assert.equal(
       security.authorize(request({ origin: 'http://evil.test' }, path), response() as unknown as ServerResponse),

@@ -618,7 +618,7 @@ function whisperBubbleView(state) {
 		text: msg
 	}];
 }
-function memeImageUrl(name, base = "/dsh-pet-7340", assetRoot = "") {
+function memeImageUrl(name, base = "/dsh-columbina-pet-7340", assetRoot = "") {
 	const root = String(assetRoot ?? "").trim();
 	const prefix = root ? "/pic/memes/" + encodeURIComponent(root) : "/pic/memes";
 	return base + prefix + "/" + encodeURIComponent(name) + ".png";
@@ -638,7 +638,7 @@ function injectMemeBubbleCss() {
 	tag.textContent = MEME_BUBBLE_CSS;
 	document.head.appendChild(tag);
 }
-function createMemeImage(name, base = "/dsh-pet-7340", assetRoot = "") {
+function createMemeImage(name, base = "/dsh-columbina-pet-7340", assetRoot = "") {
 	const key = String(name ?? "").trim();
 	if (!key) return null;
 	injectMemeBubbleCss();
@@ -1161,7 +1161,7 @@ function injectChatCss() {
 function mountChatDialog(opts) {
 	injectChatCss();
 	const { petId, surface, x, y, onSent, onClose, clamp } = opts;
-	const baseUrl = opts.baseUrl ?? "/dsh-pet-7340/chat";
+	const baseUrl = opts.baseUrl ?? "/dsh-columbina-pet-7340/chat";
 	const withPet = baseUrl + "?pet=" + encodeURIComponent(petId) + "&surface=" + surface;
 	const c = clamp && Number.isFinite(clamp.x + clamp.y + clamp.w + clamp.h) ? clamp : {
 		x: 0,
@@ -1781,7 +1781,7 @@ function normLeaf(value) {
 		data: leaf$1.data ?? null
 	};
 }
-async function fetchState(baseUrl = "/dsh-pet-7340/state", wait) {
+async function fetchState(baseUrl = "/dsh-columbina-pet-7340/state", wait) {
 	try {
 		const url = wait ? `${baseUrl}?since=${wait.since}&timeout=${wait.timeoutMs}` : baseUrl;
 		const res = await fetch(url, { cache: "no-store" });

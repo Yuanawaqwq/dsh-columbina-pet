@@ -3,9 +3,9 @@
  *
  * 架构：Helper 与宿主之间除了日志，还有一条 **stdin/stdout JSON 行协议**（bridge）：
  *   - 渲染端不再直接访问 DSH WebServer（DSH Desktop 2.0.3+ 的浏览器访问闸门会给插件自拉的
- *     独立进程裸 HTTP 请求回 403），改走自定义 scheme `dsh-pet-bridge://` → Electron 主进程
+ *     独立进程裸 HTTP 请求回 403），改走自定义 scheme `dsh-columbina-pet-bridge://` → Electron 主进程
  *     （main.js 的 protocol.handle）→ 本模块的管道 → 宿主 handlePetRoute（与 HTTP 路由同一份逻辑）。
- *   - 协议行统一前缀 `dsh-pet-bridge:`，与普通日志行区分（main.js 的 console 输出也走 stdout）。
+ *   - 协议行统一前缀 `dsh-columbina-pet-bridge:`，与普通日志行区分（main.js 的 console 输出也走 stdout）。
  *   - 素材（webm/字体/光标）不把二进制过管道：宿主返回文件绝对路径，main.js 自行读盘应答。
  * 本文件负责解析 Electron 可执行文件、以子进程方式拉起 electron-helper/main.js、
  * 守护协议通道、并在异常退出时自动重启。
@@ -24,9 +24,9 @@ export const packageRoot = resolve(here, '..');
 export const defaultHelperMain = resolve(packageRoot, 'runtime', 'electron-helper', 'main.js');
 
 /** 协议行前缀：stdout/stdin 里以此开头的整行 JSON 属于 bridge 协议，其余为日志 */
-export const BRIDGE_PREFIX = 'dsh-pet-bridge:';
+export const BRIDGE_PREFIX = 'dsh-columbina-pet-bridge:';
 
-/** 渲染端（经 main.js 转发）的一次请求：URL 是 /dsh-pet-7340/... 路径 + 查询串；
+/** 渲染端（经 main.js 转发）的一次请求：URL 是 /dsh-columbina-pet-7340/... 路径 + 查询串；
  *  cb = main.js 本地回调服务器地址（宿主把应答 POST 回去；Electron 主进程读不到 piped stdin，
  *  故应答不走 0 号管道 —— electron#4218） */
 export interface BridgeRequest {
@@ -370,7 +370,7 @@ export class HelperProcess {
     return child;
   }
 
-  /** stdout 按行缓冲：`dsh-pet-bridge:` 前缀整行 = 协议请求，其余 = 日志行 */
+  /** stdout 按行缓冲：`dsh-columbina-pet-bridge:` 前缀整行 = 协议请求，其余 = 日志行 */
   private onStdoutChunk(chunk: string): void {
     this.stdoutBuffer += chunk;
     let nl: number;

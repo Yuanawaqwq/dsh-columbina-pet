@@ -10,7 +10,7 @@ const S = window.PetShared;
 
 const params = new URLSearchParams(location.search);
 const CONFIG = {
-  configUrl: params.get('configUrl') || 'http://127.0.0.1:3080/dsh-pet-7340/config',
+  configUrl: params.get('configUrl') || 'http://127.0.0.1:3080/dsh-columbina-pet-7340/config',
   scale: Number(params.get('scale') || '1'),
   petIndex: Number(params.get('petIndex') || '0'),
   topInsetRatio: Number(params.get('topInsetRatio') || '0'),
@@ -156,8 +156,8 @@ applyDeskGeometry({
   topInsetRatio: CONFIG.topInsetRatio,
 });
 const ORIGIN = new URL(CONFIG.configUrl).origin;
-/** 宿主 /dsh-pet-7340 前缀：bridge 走自定义 scheme（主进程转发），否则 HTTP 直连宿主 */
-const BASE = BRIDGE ? 'dsh-pet-bridge://dsh-pet/dsh-pet-7340' : ORIGIN + '/dsh-pet-7340';
+/** 宿主 /dsh-columbina-pet-7340 前缀：bridge 走自定义 scheme（主进程转发），否则 HTTP 直连宿主 */
+const BASE = BRIDGE ? 'dsh-columbina-pet-bridge://dsh-columbina-pet/dsh-columbina-pet-7340' : ORIGIN + '/dsh-columbina-pet-7340';
 const STATE_URL = BASE + '/state'; // 轮询统一状态 S：前端 1s 轮询的唯一数据源（余额/工作状态/通知/说话）
 const BALANCE_URL = BASE + '/balance'; // 余额刷新动作（POST，写 S；数据本身从 /state 读）
 const WHISPER_URL = BASE + '/whisper';

@@ -29,7 +29,7 @@
  *     跳过该实例并告警）；name 缺失/空 → 按该宠物 id 处理并告警（既定规则，不继承默认名字）。
  *
  * 消费端契约：其他代码（路由/命令/碎碎念/对话/桌面）只消费 readAllConfig 的返回值，
- * 不做任何校验/兜底；浏览器与桌面通过 GET /dsh-pet-7340/config 拿到同一份成品。
+ * 不做任何校验/兜底；浏览器与桌面通过 GET /dsh-columbina-pet-7340/config 拿到同一份成品。
  *
  * 本模块是 host 自包含实现（不 import src/shared —— DSH 单文件加载约束）；
  * 浏览器/桌面侧的对应纯逻辑（把成品拍平成渲染列表）在 src/shared/config.ts。
@@ -169,11 +169,11 @@ export function userConfigUnparsable(paths: ConfigPaths): boolean {
 export interface ConfigPaths {
   /** 包内 assets/config.jsonc（内置默认，绝对正确） */
   defaultFile: string;
-  /** ~/.dsh/dsh-pet/main-config.jsonc（用户主配置，可编辑层；JSONC——允许注释） */
+  /** ~/.dsh/columbina-pet/main-config.jsonc（用户主配置，可编辑层；JSONC——允许注释） */
   userFile: string;
-  /** 旧版路径 ~/.dsh/dsh-pet/main-config.json：读取回落 + 启动时迁移（见 migrateUserConfig） */
+  /** 旧版路径 ~/.dsh/columbina-pet/main-config.json：读取回落 + 启动时迁移（见 migrateUserConfig） */
   legacyUserFile?: string;
-  /** ~/.dsh/dsh-pet/pet（文件宠物目录） */
+  /** ~/.dsh/columbina-pet/pet（文件宠物目录） */
   petDir: string;
 }
 

@@ -1,3 +1,15 @@
+## 1.0.4 — 2026-10
+
+与上游 `dsh-pet` 并存（命名空间彻底拆开）。
+
+- **宿主路由**：`/dsh-pet-7340` → `/dsh-columbina-pet-7340`；旧前缀仍尝试注册（被上游占用则静默跳过），旧书签/旧客户端不会 404。
+- **bridge**：自定义 scheme、管道前缀、`PET_ROUTE` 全部改为 `dsh-columbina-pet-bridge`（URL host 也改为 `dsh-columbina-pet`）。
+- **用户目录**：`$DSH_HOME/dsh-pet` → `$DSH_HOME/columbina-pet`，首次启动自动迁移（新目录已存在则不动）。
+- **会话身份**：`PET_CALL_IDENTITY` 由 `dsh-pet` 改为 `dsh-columbina-pet`，与上游的会话/通知互不串台。
+- **本地素材通道**：voice sidecar 新增 `runtime://` → `blob:` 代理（仅当素材地址以该 scheme 下发时生效），避免外置素材下 `<video src>` 静默黑屏。
+
+升级后请**完整退出 DSH 再打开**；若桌宠之前与上游装在一起，现在可以同时启用。
+
 # 更新日志
 
 ## 1.0.3 — 2026-10
