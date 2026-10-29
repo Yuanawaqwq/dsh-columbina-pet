@@ -11,6 +11,6 @@ declare const window: {
 };
 
 window.__ModuleLoader__.load({
-  id: 'dsh-pet',
+  id: 'dsh-columbina-pet',
   factory: makeFactory(),
 });
