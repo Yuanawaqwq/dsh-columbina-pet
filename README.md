@@ -116,6 +116,25 @@ npm install file:/path/to/dsh-columbina-pet
 
 > 说明：仓库自带约 150 MB 的 2D 形象与语音素材，打包后超过 180 MB。npm 公共仓库对包体积有上限，建议用上面的 GitHub 安装方式，或发布 GitHub Release 附 tar 包；也欢迎你替换成自己的素材后瘦身再上架。
 
+### 素材外置（可选，1.0.2+）
+
+素材可以从插件目录里搬出去，放在 `~/.dsh/columbina-pet/assets/`：宿主按「外置根优先、包内兜底」读取，形象、表情包、字体、图片与 `config.jsonc` 都适用。
+
+```bash
+# 复制到外置根（保留包内原文件）
+node scripts/migrate-assets.mjs
+# 校验后删除包内素材（插件目录立即瘦身）
+node scripts/migrate-assets.mjs --move
+```
+
+### 健康检查
+
+宿主在 `GET /dsh-pet-7340/healthz` 暴露一次自检：版本、Electron 路径、Helper 是否在跑、素材根，以及最近的启动错误（`launch-error.json`）。排障时先看它：
+
+```bash
+curl http://127.0.0.1:<DSH 端口>/dsh-pet-7340/healthz
+```
+
 ### 第一次启动
 
 首次使用需要 Electron 运行时（约 100 MB，从 npmmirror 下载，可用环境变量换源）：
@@ -153,6 +172,7 @@ node node_modules/dsh-columbina-pet/scripts/ensure-electron.mjs
 | --- | --- | --- |
 | live 形象 | `~/.dsh/dsh-pet/main-animation/webm/` | `assets/webm/` |
 | 表情包 | `~/.dsh/dsh-pet/memes/` | `assets/memes/` |
+| 外置素材根（1.0.2+，优先级最高） | `~/.dsh/columbina-pet/assets/` | — |
 
 常用字段（`assets/config.jsonc` 内有完整注释与默认值）：
 

@@ -1,5 +1,16 @@
 # 更新日志
 
+## 1.0.2 — 2026-10
+
+启动与诊断加固（不改变桌宠行为）：
+
+- Electron 准备改为幂等：可执行文件可用就直接复用，不重装、不联网；半截/空壳文件只删该文件后重新解压，避免把「损坏的 exe」当成已安装。
+- 下载失败自动重试 2 次；最终失败写入 `~/.dsh/columbina-pet/launch-error.json`，方便用户把原因贴到 issue。
+- 新增 `GET /dsh-pet-7340/healthz`：返回版本、Electron 路径、Helper 是否在跑、素材根、最近的启动错误。
+- `resolveElectronPath()` 增加可用性校验与 `DSH_ELECTRON_PATH` 候选，避免拿到 0 字节文件后 spawn 失败。
+- 新增可选的素材外置根 `~/.dsh/columbina-pet/assets`：存在同名文件时优先于包内 `assets/`（形象、表情包、字体、图片、config 均适用）。
+- 新增 `node scripts/migrate-assets.mjs [--move]`：把包内素材搬到外置根，便于瘦身/备份。
+
 ## 1.0.1 — 2026-10
 
 修复在 DSH 0.2.1-rc.3 上安装后无法启动的问题（`web boot: 1 entry did not activate` / `dsh-columbina-pet: import failed`）。
