@@ -182,6 +182,17 @@ function injectCss(): void {
  * @param rt 运行时注入的 react 能力（h=jsx / useState / useEffect / useRef）
  * @returns PetMulti 多开容器组件（内部渲染多个 PetCard）
  */
+const clampNum = (v: number, lo: number, hi: number): number => {
+  if (!Number.isFinite(v)) return lo;
+  return hi < lo ? lo : Math.min(Math.max(v, lo), hi);
+};
+/** 把归一化位置夹回可见区（中心点至少留半个身体在屏内）。 */
+const clampRatio = (v: number, half: number, span: number): number => {
+  if (!Number.isFinite(v)) return 0.5;
+  const pad = Math.min(0.5, Math.max(0, half / Math.max(1, span)));
+  return Math.min(Math.max(v, pad), 1 - pad);
+};
+
 export function makePetUI(rt: {
   h: typeof jsx;
   useState: <T>(init: T) => [T, Dispatch<SetStateAction<T>>];
@@ -1867,8 +1878,10 @@ export function makePetUI(rt: {
         }
         // 释放位置 = 弹簧跟随的实时包围盒左上角（不是指针目标：跟手滞后时落点跟随宠物实际位置）
         const bx = boxPxRef.current;
-        const px = bx ? bx.x : e.clientX - d.offX - halfW;
-        const py = bx ? bx.y : e.clientY - d.offY - halfH;
+        const maxPx = Math.max(0, window.innerWidth - size);
+        const maxPy = Math.max(0, window.innerHeight - size);
+        const px = clampNum(bx ? bx.x : e.clientX - d.offX - halfW, 0, maxPx);
+        const py = clampNum(bx ? bx.y : e.clientY - d.offY - halfH, 0, maxPy);
         if (d.sling) {
           // 弹弓：力度 = **拉距**（与手速无关），方向 = 拉的**反方向**。
           // 拉向量用宠物实际中心算（不是指针）——弹簧跟手有滞后，用户看到的是宠物拉出去多远。
@@ -1915,7 +1928,10 @@ export function makePetUI(rt: {
             startThrow(px, py, vel.vx, vel.vy);
           } else {
             // 原地放下：提交 customPos → React 按 rootStyle（含边界夹取）重排位置
-            setCustomPos({ rx: (px + halfW) / window.innerWidth, ry: (py + halfH) / window.innerHeight });
+            setCustomPos({
+              rx: clampRatio((px + halfW) / window.innerWidth, halfW, window.innerWidth),
+              ry: clampRatio((py + halfH) / window.innerHeight, halfH, window.innerHeight),
+            });
           }
         }
       }
@@ -1933,6 +1949,45 @@ export function makePetUI(rt: {
         setTipOn(true);
       }
     };
+    /** 指针在窗口外松开 / 系统抢焦点时收不到 pointerup：兜底结束拖拽并把宠物夹回屏内。 */
+    useEffect(() => {
+      const rescue = () => {
+        const d = dragRef.current;
+        if (!d || !d.active) return;
+        d.active = false;
+        d.dragging = false;
+        if (d.lpTimer) {
+          window.clearTimeout(d.lpTimer);
+          d.lpTimer = null;
+        }
+        try {
+          stopDragFollow();
+        } catch (e) {}
+        const el = rootRef.current;
+        if (el) {
+          const r = el.getBoundingClientRect();
+          const nx = clampNum(r.left, 0, Math.max(0, window.innerWidth - r.width));
+          const ny = clampNum(r.top, 0, Math.max(0, window.innerHeight - r.height));
+          el.style.left = nx + 'px';
+          el.style.top = ny + 'px';
+          el.style.right = 'auto';
+          el.style.bottom = 'auto';
+          boxPxRef.current = { x: nx, y: ny };
+          setCustomPos({
+            rx: clampRatio((nx + r.width / 2) / window.innerWidth, r.width / 2, window.innerWidth),
+            ry: clampRatio((ny + r.height / 2) / window.innerHeight, r.height / 2, window.innerHeight),
+          });
+        }
+        setDragging(false);
+      };
+      window.addEventListener('blur', rescue);
+      window.addEventListener('pointercancel', rescue, true);
+      return () => {
+        window.removeEventListener('blur', rescue);
+        window.removeEventListener('pointercancel', rescue, true);
+      };
+    }, []);
+
     const handleClick = () => {
       const d = dragRef.current;
       if (d.active || d.dragging || justDraggedRef.current) return;
@@ -2128,10 +2183,9 @@ export function makePetUI(rt: {
     const stageStyle = dragging ? { transform: 'none' } : { transform: 'translateY(' + bottomPad + 'px)' };
     const rootStyle = customPos
       ? (() => {
-          const rx = customPos.rx;
-          const ry = customPos.ry;
-          // 拖拽位置即松手位置：不做边界夹取——宠物可被拖到屏幕任意位置（含贴边/出界），
-          // 松手不会被拉回；漫游/抛掷路径自身目标已界内，不受影响。
+          // 旧实现刻意不夹取，宠物被拖出视口后 rx/ry 越界就永久消失；这里改成永远夹回可见区。
+          const rx = clampRatio(customPos.rx, halfW, window.innerWidth);
+          const ry = clampRatio(customPos.ry, halfH, window.innerHeight);
           return {
             left: rx * window.innerWidth - halfW + 'px',
             top: ry * window.innerHeight - halfH + 'px',

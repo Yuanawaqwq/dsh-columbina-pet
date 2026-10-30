@@ -85,7 +85,7 @@ function candidates() {
 
 async function fetchTo(url) {
 	console.log(`[voice] 下载语音包 ${url}`);
-	const timeoutMs = Number(process.env.DSH_COLUMBINA_VOICE_TIMEOUT_MS) || 900000;
+	const timeoutMs = Number(process.env.DSH_COLUMBINA_VOICE_TIMEOUT_MS) || 120000;
 	let res;
 	try {
 		res = await fetch(url, { redirect: "follow", signal: AbortSignal.timeout(timeoutMs) });
