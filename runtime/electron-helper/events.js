@@ -168,11 +168,12 @@ PetSprite.prototype.showWhisper = function showWhisper(text, image, url, duratio
   if (anim !== false) {
     const pool = this.animations.events?.whisper;
     if (!pool || pool.length === 0) {
-      console.error('[dsh-pet] 配置缺少 animations.events.whisper，无法播放碎碎念动画');
-      return;
+      // 气泡与动画解耦：缺 whisper 池时只跳过动画联动，文本照弹（与浏览器端同一处理）
+      console.warn('[dsh-pet] 配置缺少 animations.events.whisper，只显示气泡不切动画');
+    } else {
+      // 整池随机抽 1 槽（避开当前正播动画，避免连续重复）；槽位若为数组候选再档内随机（与浏览器一致）
+      name = S.pickSlot(S.pick(pool, this.anim), this.anim);
     }
-    // 整池随机抽 1 槽（避开当前正播动画，避免连续重复）；槽位若为数组候选再档内随机（与浏览器一致）
-    name = S.pickSlot(S.pick(pool, this.anim), this.anim);
   }
   console.log(
     '[dsh-pet] ' +
