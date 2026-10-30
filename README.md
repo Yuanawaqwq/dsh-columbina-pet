@@ -26,9 +26,13 @@
 
 ## 预览
 
-| 天气菜单 | 表情时刻 |
+| 桌面模式 | 右键菜单 |
 | :-: | :-: |
-| ![天气菜单](assets/preview/weather-menu.png) | ![好耶](assets/preview/好耶.webp) |
+| ![桌面模式](docs/screenshots/01-desktop.png) | ![右键菜单](docs/screenshots/02-menu.png) |
+
+| 四套 2D live 形象 | 设置面板 |
+| :-: | :-: |
+| ![四套形象](docs/screenshots/03-skins.png) | ![设置面板](docs/screenshots/04-settings.png) |
 
 ## 特性
 
