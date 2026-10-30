@@ -11,6 +11,7 @@
  *   DSH_VOICE_PACK_FILE=D:/packs/voice.tar.gz node scripts/ensure-voice.mjs   # 本地包
  *   DSH_VOICE_PACK_URL=https://... node scripts/ensure-voice.mjs              # 自定义地址
  *   DSH_VOICE_PACK_TARGET=/path/to/voice/official node scripts/ensure-voice.mjs
+ *   DSH_COLUMBINA_VOICE_TIMEOUT_MS=120000 DSH_COLUMBINA_VOICE_STALL_MS=20000 node scripts/ensure-voice.mjs
  *
  * 已有完整语音时直接退出（0）；下载失败时保持原状并退出（1），宿主侧按「无原声」降级。
  */
@@ -83,33 +84,57 @@ function candidates() {
 	return list;
 }
 
+/** 单次下载：总预算 + 停滞检测（长时间没有新字节就立刻换镜像，而不是干等满预算）。 */
 async function fetchTo(url) {
-	console.log(`[voice] 下载语音包 ${url}`);
-	const timeoutMs = Number(process.env.DSH_COLUMBINA_VOICE_TIMEOUT_MS) || 120000;
-	let res;
-	try {
-		res = await fetch(url, { redirect: "follow", signal: AbortSignal.timeout(timeoutMs) });
-	} catch (error) {
-		throw new Error(`下载请求失败或超时（${Math.round(timeoutMs / 1000)}s）：${error && error.message ? error.message : String(error)}`);
-	}
-	if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
-	const total = Number(res.headers.get("content-length")) || 0;
-	const chunks = [];
+	const budgetMs = Number(process.env.DSH_COLUMBINA_VOICE_TIMEOUT_MS) || 120000;
+	const stallMs = Number(process.env.DSH_COLUMBINA_VOICE_STALL_MS) || 20000;
+	console.log(`[voice] 下载语音包 ${url}（总预算 ${Math.round(budgetMs / 1000)}s，停滞 ${Math.round(stallMs / 1000)}s 换镜像）`);
+	const ctrl = new AbortController();
+	const startedAt = Date.now();
+	let lastByteAt = startedAt;
 	let got = 0;
-	for await (const chunk of res.body) {
-		chunks.push(chunk);
-		got += chunk.length;
-		if (total && got % (4 * 1024 * 1024) < chunk.length) {
-			process.stdout.write(`\r[voice] ${(got / 1048576).toFixed(1)} / ${(total / 1048576).toFixed(1)} MB`);
+	let reason = "";
+	const tick = setInterval(() => {
+		const now = Date.now();
+		if (now - startedAt > budgetMs) {
+			reason = `总预算 ${Math.round(budgetMs / 1000)}s 用完（已收 ${(got / 1048576).toFixed(1)} MB）`;
+			ctrl.abort();
+		} else if (now - lastByteAt > stallMs) {
+			reason = `${Math.round(stallMs / 1000)}s 没有新字节（已收 ${(got / 1048576).toFixed(1)} MB）`;
+			ctrl.abort();
 		}
+	}, 500);
+	try {
+		let res;
+		try {
+			res = await fetch(url, { redirect: "follow", signal: ctrl.signal });
+		} catch (error) {
+			throw new Error(`下载请求失败：${error && error.message ? error.message : String(error)}`);
+		}
+		if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
+		const total = Number(res.headers.get("content-length")) || 0;
+		const chunks = [];
+		for await (const chunk of res.body) {
+			chunks.push(chunk);
+			got += chunk.length;
+			lastByteAt = Date.now();
+			if (total && got % (4 * 1024 * 1024) < chunk.length) {
+				process.stdout.write(`\r[voice] ${(got / 1048576).toFixed(1)} / ${(total / 1048576).toFixed(1)} MB`);
+			}
+		}
+		process.stdout.write("\n");
+		if (reason) throw new Error(reason);
+		const buf = Buffer.concat(chunks);
+		if (expectSha) {
+			const sha = createHash("sha256").update(buf).digest("hex");
+			if (sha !== expectSha) throw new Error(`sha256 不匹配：${sha}`);
+		}
+		writeFileSync(tmp, buf);
+	} catch (error) {
+		throw new Error(reason || (error instanceof Error ? error.message : String(error)));
+	} finally {
+		clearInterval(tick);
 	}
-	process.stdout.write("\n");
-	const buf = Buffer.concat(chunks);
-	if (expectSha) {
-		const sha = createHash("sha256").update(buf).digest("hex");
-		if (sha !== expectSha) throw new Error(`sha256 不匹配：${sha}`);
-	}
-	writeFileSync(tmp, buf);
 }
 
 async function download() {

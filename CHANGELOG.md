@@ -12,11 +12,20 @@
 
 # 更新日志
 
+## 1.1.11 — 2026-10
+
+- `/healthz` 的 `version` 改为**请求时读磁盘** `package.json`，并新增 `activatedVersion`（插件激活那一刻读进内存的版本）与 `buildSha256`（磁盘 `lib/index.js` 的 sha256，按 `mtime:size` 缓存）——以后半装或换包没重启，一眼能看出来，不必再靠 `sha256sum` 手比
+- `scripts/ensure-voice.mjs` 增加**总预算 + 停滞检测**：默认 120 s 总预算，另有 20 s 没有新字节就直接换下一个镜像（`DSH_COLUMBINA_VOICE_STALL_MS` 可调），失败不留半截文件
+- 发布包去掉 `src/`（`files` 与 `exports` 里同一条移除）：npm 形态条目 607 → 465，tarball 148.56 MB → 148.11 MB；`src/` 只是 TS 参考，仓库里仍保留
+- 路由路径解码改为容错：非 UTF-8 的百分号编码（例如 Windows 控制台 curl 按 GBK 送的 `晚安`）不再让整条路由 500，降级成 404
+- 1.1.10 的 CHANGELOG 补了一句影响面：只影响网页模式面板，桌面端始终正常
+
 ## 1.1.10 — 2026-10
 
 - 宿主 `GET /voice-prefs` 增加一次性迁移：读到没有 `prefsRev` 标记、且 `lines` 恰好是 `[0]` 的旧文件时，还原成 `null`（全选），并把标记补写进 `prefs.json`
 - 宿主 `POST /voice-prefs` 落盘时带上 `prefsRev: 2`，此后不再重复迁移
 - 背景：`1.1.9` 之前网页面板的「全不选」写的是 `lines: [0]`（= 只念第 0 句），凡是点过的人网页端都只剩第一句；桌面端因为先用 `localStorage` 里的 `lines` 并带 `localAt` 时间戳比较，看起来一直是好的
+- 影响面：只影响网页模式的面板；桌面端始终正常。升级后打开一次网页端就自动修复（`prefs.json` 里出现 `"prefsRev": 2` 即已迁移），不需要手动改文件
 
 ## 1.1.9 — 2026-10
 
