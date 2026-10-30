@@ -102,6 +102,15 @@ npm install dsh-columbina-pet
 
 **完整退出 DSH 再打开**（关窗口、刷新页面都不算重启）。
 
+### 从 npm 安装（1.1.11+）
+
+```bash
+cd ~/.dsh/profiles/<你的 profile>
+npm install dsh-columbina-pet@1.1.11
+```
+
+装完同样把 `dsh-columbina-pet` 加进 profile 的 `dsh.profile.bundles`，然后**完整退出 DSH 再打开**。
+
 ### 从 GitHub 安装
 
 ```bash
@@ -118,7 +127,7 @@ npm install file:C:\path\to\dsh-columbina-pet
 npm install file:/path/to/dsh-columbina-pet
 ```
 
-> 说明：仓库自带约 150 MB 的 2D 形象与语音素材，打包后超过 180 MB。npm 公共仓库对包体积有上限，建议用上面的 GitHub 安装方式，或发布 GitHub Release 附 tar 包；也欢迎你替换成自己的素材后瘦身再上架。
+> 说明：仓库自带约 150 MB 的 2D 形象与语音素材，npm 包 tarball 约 148 MB、解包 161 MB。体积偏大，国内直连 registry 可能较慢；网络不好时优先走 GitHub 或 Release 附件，或按下面的镜像写法加速。
 
 ### 国内网络加速（可选）
 
