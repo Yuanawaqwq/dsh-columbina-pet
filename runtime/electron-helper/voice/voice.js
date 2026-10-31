@@ -47,6 +47,15 @@
     }
   })();
   var officialUnavailable = false;
+  // 宿主的同源 HTTP 基准（/voice/health、/voice/repair 都挂在这个前缀下）；
+  // OFFICIAL_BASE 已经是 <前缀>/voice/official/，往上退两级回到前缀根。
+  var API_BASE = (function () {
+    try {
+      return new URL('../..', OFFICIAL_BASE).href;
+    } catch (e) {
+      return '';
+    }
+  })();
 
   var VOLUME = 0.9;
   // 音量 / 静音：桌宠自己记一份（localStorage），右键菜单里改，不占用宿主设置面板的键位。
@@ -1280,9 +1289,9 @@
     var lang = normLang(subLang, 'zh');
     var cond = weatherWords()[w.kind] || weatherWords().cloud;
     var city = w.city ? ' · ' + w.city : '';
-    if (lang === 'ja') return '今日は' + cond + '、' + w.temp + '°C（' + w.tmin + '〜' + w.tmax + '°C）' + city;
-    if (lang === 'en') return 'Today ' + cond + ', ' + w.temp + '°C (' + w.tmin + '–' + w.tmax + '°C)' + city;
-    return '今天' + cond + '，' + w.temp + '°C，' + w.tmin + '~' + w.tmax + '°C' + city;
+    if (lang === 'ja') return '今日は' + cond + '、' + w.temp + '℃（' + w.tmin + '〜' + w.tmax + '℃）' + city;
+    if (lang === 'en') return 'Today ' + cond + ', ' + w.temp + '℃ (' + w.tmin + '–' + w.tmax + '℃)' + city;
+    return '今天' + cond + '，' + w.temp + '℃，' + w.tmin + '~' + w.tmax + '℃' + city;
   }
 
   function weatherFailText() {
@@ -1297,7 +1306,7 @@
     var city = (w && w.city) || '？';
     if (lang === 'ja') return 'あなたは' + city + 'にいるのね。';
     if (lang === 'en') return 'I think you are in ' + city + '.';
-    return '我看到的你在' + city + '呢。';
+    return '我看到你在' + city + '呢。';
   }
 
   function chatLinePool() {
@@ -1424,7 +1433,7 @@
     ja: {
       '打开网站': 'サイトを開く', '打开软件': 'アプリを開く', '查看余额': '残高を見る',
       '对话': '会話', '回到初始位置': '元の位置へ', '重载配置': '設定を再読込',
-      '真实物理：开': '物理挙動：オン', '真实物理：关': '物理挙動：オフ', '点一下切换': 'クリックで切替',
+      '真实物理：开': '物理挙動：オン', '真实物理：关': '物理挙動：オフ', '点一下切换': 'クリックで切替',      '设置面板': '設定パネル', '检查、勾选、修复都在这里': 'チェック・選択・修復はここで',
       '显示位置': '表示位置', '仅网页': 'ウェブのみ', '仅桌面': 'デスクトップのみ', '两者': '両方', '都不': 'どちらも表示しない',
       '动作': 'アクション', '待机': '待機', '转向': '振り向き', '拖拽': 'ドラッグ', '点击回应': 'クリック反応', '移动': '移動',
       '亲昵': 'なかよし', '俏皮': 'おちゃめ', '小动作': 'しぐさ', '心情': '気分',
@@ -1446,7 +1455,7 @@
     en: {
       '打开网站': 'Open site', '打开软件': 'Open app', '查看余额': 'Check balance',
       '对话': 'Chat', '回到初始位置': 'Back to start', '重载配置': 'Reload config',
-      '真实物理：开': 'Physics: on', '真实物理：关': 'Physics: off', '点一下切换': 'Click to toggle',
+      '真实物理：开': 'Physics: on', '真实物理：关': 'Physics: off', '点一下切换': 'Click to toggle',      '设置面板': 'Settings panel', '检查、勾选、修复都在这里': 'Check, pick and repair live here',
       '显示位置': 'Show on', '仅网页': 'Web only', '仅桌面': 'Desktop only', '两者': 'Both', '都不': 'None',
       '动作': 'Actions', '待机': 'Idle', '转向': 'Turn', '拖拽': 'Drag', '点击回应': 'Click reply', '移动': 'Walk',
       '亲昵': 'Affection', '俏皮': 'Playful', '小动作': 'Gestures', '心情': 'Mood',
@@ -1968,6 +1977,96 @@
     if (count) count.textContent = idleCountText();
   }
 
+  // 素材自检：桌宠自己看不见目录，只能问宿主（/voice/health、/voice/repair）。
+  var assetsInfo = null;
+  var assetsBusy = '';
+  var assetsNote = '';
+
+  function assetsMb(bytes) {
+    var n = Number(bytes) || 0;
+    return n > 0 ? (n / 1048576).toFixed(1) + ' MB' : '0 MB';
+  }
+
+  function assetsRows() {
+    if (!assetsInfo) {
+      var hint = assetsBusy ? assetsBusy + '…' : '还没检查';
+      return '<div class="cv-row"><span class="cv-lab">状态</span>' +
+        '<span class="cv-val" style="flex:1;text-align:left">' + cvEscape(hint) + '</span></div>';
+    }
+    var voice = assetsInfo.voice || {};
+    var webm = assetsInfo.webm || {};
+    var memes = assetsInfo.memes || {};
+    var rows = [
+      '<div class="cv-row"><span class="cv-lab">语音包</span>' +
+        '<span class="cv-val" style="flex:1;text-align:left">' + (voice.ready ? '已就绪' : '缺失') +
+        ' · ' + (voice.files || 0) + ' 段 · ' + assetsMb(voice.bytes) + '</span></div>',
+      '<div class="cv-row"><span class="cv-lab">动作切片</span>' +
+        '<span class="cv-val" style="flex:1;text-align:left">' + (webm.count || 0) + ' 段 · ' + assetsMb(webm.bytes) + '</span></div>',
+      '<div class="cv-row"><span class="cv-lab">表情包</span>' +
+        '<span class="cv-val" style="flex:1;text-align:left">' + (memes.count || 0) + ' 张 · ' + assetsMb(memes.bytes) + '</span></div>'
+    ];
+    return rows.join('');
+  }
+
+  function refreshAssets() {
+    var box = document.getElementById('cv-assets');
+    if (box) box.innerHTML = assetsRows();
+    var note = document.getElementById('cv-assets-note');
+    if (note) note.textContent = assetsNote || (assetsBusy ? assetsBusy + '…' : '还没检查过');
+    var chk = document.getElementById('cv-assets-check');
+    if (chk) {
+      chk.textContent = assetsBusy === '检查中' ? '检查中…' : '检查素材';
+      chk.disabled = Boolean(assetsBusy);
+    }
+    var rep = document.getElementById('cv-assets-repair');
+    if (rep) {
+      rep.textContent = assetsBusy === '修复中' ? '修复中…' : '一键修复';
+      rep.disabled = Boolean(assetsBusy);
+    }
+  }
+
+  function sayQuiet(text) {
+    try {
+      showBubble(text, 2200, true);
+    } catch (e) { /* 气泡失败不影响结果 */ }
+  }
+
+  function assetsFetch(repair) {
+    if (assetsBusy) return;
+    assetsBusy = repair ? '修复中' : '检查中';
+    assetsNote = '';
+    refreshAssets();
+    var url = API_BASE + (repair ? 'voice/repair' : 'voice/health');
+    var init = repair ? { method: 'POST', cache: 'no-store' } : { cache: 'no-store' };
+    console.log('[columbina-voice] 素材自检 ->', url);
+    fetch(url, init).then(function (r) {
+      return r.json();
+    }).then(function (data) {
+      assetsInfo = data || null;
+      assetsBusy = '';
+      var v = (assetsInfo && assetsInfo.voice) || {};
+      var w = (assetsInfo && assetsInfo.webm) || {};
+      var m = (assetsInfo && assetsInfo.memes) || {};
+      var stamp = new Date().toLocaleTimeString('zh-CN', { hour12: false });
+      if (repair) {
+        assetsNote = (data && data.repaired ? '已重新下载语音包' : '没有缺失（或修复失败，宿主日志有细节）') + ' · ' + stamp;
+        sayQuiet(data && data.repaired ? '语音包修好了' : '都齐着呢，不用修');
+      } else {
+        assetsNote = '已检查 ' + stamp + ' · 语音包 ' + (v.files || 0) + ' 段 / 动作 ' +
+          (w.count || 0) + ' 段 / 表情 ' + (m.count || 0) + ' 张';
+        sayQuiet('素材自检完成：语音包 ' + (v.files || 0) + ' 段');
+      }
+      console.log('[columbina-voice] 素材自检完成', assetsNote);
+      refreshAssets();
+    }).catch(function (err) {
+      assetsBusy = '';
+      assetsNote = '请求失败：' + (err && err.message ? err.message : String(err));
+      console.log('[columbina-voice] 素材自检失败', err);
+      sayQuiet('素材自检没连上宿主');
+      refreshAssets();
+    });
+  }
+
   function renderPanel() {
     if (!panelEl) return;
     var target = document.getElementById('cv-body');
@@ -1997,6 +2096,12 @@
       '<button class="cv-mini" data-act="idle-curated">还原精选</button></div>',
       '<input class="cv-search" id="cv-idle-search" type="text" placeholder="搜索动作名（呆 / 哭 / 睡觉 …）" value="' + cvEscape(idleFilter) + '">',
       '<div class="cv-lines tall" id="cv-idle-list">' + idleListHTML() + '</div>',
+      '<div class="cv-sec" data-sec="assets">语音包与素材</div>',
+      '<div id="cv-assets">' + assetsRows() + '</div>',
+      '<div class="cv-row"><button class="cv-mini" id="cv-assets-check" data-act="assets-check">检查素材</button>',
+      '<button class="cv-mini" id="cv-assets-repair" data-act="assets-repair">一键修复</button></div>',
+      '<div class="cv-row"><span class="cv-lab">结果</span>' +
+        '<span class="cv-val" id="cv-assets-note" style="flex:1;text-align:left">还没检查过</span></div>',
       '<div class="cv-sec" data-sec="lines">原声台词</div>',
       linesBlock(),
       '<div class="cv-sec" data-sec="weather">天气</div>',
@@ -2011,6 +2116,7 @@
       var top = sec ? Math.max(0, sec.offsetTop - 6) : 0;
       body.scrollTop = top;
     }
+    if (panelSection === 'assets' && !assetsInfo && !assetsBusy) assetsFetch(false);
   }
 
   function panelPickLine(idx, on) {
@@ -2124,6 +2230,14 @@
       saveIdlePrefs();
       applyIdlePool({ replay: true });
       renderPanel();
+      return;
+    }
+    if (act === 'assets-check') {
+      assetsFetch(false);
+      return;
+    }
+    if (act === 'assets-repair') {
+      assetsFetch(true);
       return;
     }
     if (act === 'line') {
@@ -2280,7 +2394,7 @@
   }
 
   function openSettingsOverlay(section) {
-    panelSection = section === 'lang' || section === 'scale' || section === 'idle' ? section : 'voice';
+    panelSection = section === 'lang' || section === 'scale' || section === 'idle' || section === 'assets' ? section : 'voice';
     ensurePanelStyles();
     if (panelEl) { renderPanel(); return; }
     panelEl = document.createElement('div');
@@ -2346,7 +2460,7 @@
    * 内置面板不依赖任何宿主，主题装没装都能开。
    */
   function openSettingsPanel(section) {
-    var target = section === 'lang' || section === 'scale' || section === 'whisper' || section === 'idle' ? section : 'voice';
+    var target = section === 'lang' || section === 'scale' || section === 'whisper' || section === 'idle' || section === 'assets' ? section : 'voice';
     try {
       openSettingsOverlay(target);
       return true;
@@ -2426,6 +2540,17 @@
   }
 
   /** 右键菜单里的待机动作：精选 / 全部 / 自己勾。 */
+  /** 「语音包与素材」：直接开设置面板的那一段（面板打开时会自动查一次）。 */
+  function buildAssetsBranch() {
+    return {
+      label: '语音包与素材',
+      hint: '自检 / 修复',
+      children: [
+        { label: '打开面板', hint: '检查素材、缺了一键修复', __columbinaOpenSettings: 'assets' },
+      ],
+    };
+  }
+
   function buildIdleBranch() {
     var skin = currentSkin();
     var pool = skinPool(skin);
@@ -2573,6 +2698,8 @@
           extras.push(buildVolumeBranch());
           extras.push(buildQuietBranch());
           extras.push(buildPowerBranch());
+          extras.push(buildAssetsBranch());
+          extras.push({ label: trText('设置面板'), hint: trText('检查、勾选、修复都在这里'), __columbinaOpenSettings: 'voice' });
           extras.push(buildIdleBranch());
           if (extras.length) {
             var chatAt = -1;
