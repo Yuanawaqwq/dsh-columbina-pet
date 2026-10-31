@@ -46,7 +46,7 @@
 - **夜间勿扰 / 音量与静音 / 素材自检与一键修复 / 网页面板同步**：见下面「功能介绍」。
 - **余额查询**：默认模型挂在 API Key 版服务商、而本机是账号登录时，不再报「缺少凭证 DEEPSEEK_API_KEY」，自动改查账号余额。
 - **素材没动**：沿用 1.1.11 的原始 webm（约 147 MB），本版**没有**做有损压缩；`scripts/shrink-webm.mjs` 留作可选工具。
-- **启动时自报身份**：宿主日志会打一行 `[dsh-pet] activated 1.1.12 build e07e48e3`。如果磁盘上已经是新版本、内存里跑的还是旧的，会再补一条 warn 提醒「需要完整退出 DSH 再打开」——以后不用先猜 `/healthz` 怎么访问。
+- **启动时自报身份**：每次启动把「这次跑的是哪个版本、哪份代码」写进 `~/.dsh/columbina-pet/activation.json`（`activatedAt` / `activatedVersion` / `diskVersion` / `buildSha256` / `needsRestart`），同时往宿主日志打一行 `[dsh-pet] activated <版本> build <sha8>`。磁盘上已经是新版本、内存里跑的还是旧的时，`needsRestart` 为 `true` 并补一条 warn——以后不用先猜 `/healthz` 怎么访问。
 - 升级后需**完整退出 DSH 再打开**；设置项都带默认值，不需要手动迁移。
 
 ### 1.1.11 · 2026-10-30
@@ -286,6 +286,8 @@ curl http://127.0.0.1:<DSH 端口>/dsh-columbina-pet-7340/healthz
 版本一栏有三个字段：`version`（磁盘上 `package.json` 的版本，请求时现读）、`activatedVersion`（内存里正在跑的）、`buildSha256`（磁盘上 `lib/index.js` 的 sha256）。三个对得上，说明跑的就是磁盘上那份代码；`version` 比 `activatedVersion` 新，就是换包没重启。
 
 `assetRoots.externalActive` 为 `true` 且 `externalFileCount > 0` 时，说明外置素材已经命中（1.0.3+）；`voicePack.active` 为 `false` 时看 `voicePack.lastError`。
+
+另有一个不用访问 URL 的旁证：`~/.dsh/columbina-pet/activation.json` 记录最近一次激活的时间、版本、`buildSha256`，以及磁盘版本与运行版本是否不一致（`needsRestart`）。
 
 ### 第一次启动
 
