@@ -46,12 +46,12 @@
 - **夜间勿扰 / 音量与静音 / 素材自检与一键修复 / 网页面板同步**：见下面「功能介绍」。
 - **余额查询**：默认模型挂在 API Key 版服务商、而本机是账号登录时，不再报「缺少凭证 DEEPSEEK_API_KEY」，自动改查账号余额。
 - **素材没动**：沿用 1.1.11 的原始 webm（约 147 MB），本版**没有**做有损压缩；`scripts/shrink-webm.mjs` 留作可选工具。
-- **启动时自报身份**：每次启动把「这次跑的是哪个版本、哪份代码」写进 `~/.dsh/columbina-pet/activation.json`（`activatedAt` / `activatedVersion` / `diskVersion` / `buildSha256` / `needsRestart`），同时往宿主日志打一行 `[dsh-pet] activated <版本> build <sha8>`。磁盘上已经是新版本、内存里跑的还是旧的时，`needsRestart` 为 `true` 并补一条 warn——以后不用先猜 `/healthz` 怎么访问。
+- **启动时自报身份**：每次启动把「这次跑的是哪个版本、哪份代码」写进 `~/.dsh/columbina-pet/activation.json`（`activatedAt` / `activatedVersion` / `diskVersion` / `buildSha256` / `activatedBuildSha256` / `needsRestart`），同时往宿主日志打一行 `[dsh-pet] activated <版本> build <sha8>`。磁盘上已经是新版本、内存里跑的还是旧的时，`needsRestart` 为 `true` 并补一条 warn——以后不用先猜 `/healthz` 怎么访问。
 - 升级后需**完整退出 DSH 再打开**；设置项都带默认值，不需要手动迁移。
 
 ### 1.1.11 · 2026-10-30
 
-- `/healthz` 增加 `activatedVersion` / `buildSha256`：换包没重启一眼可见。
+- `/healthz` 增加 `activatedVersion` / `buildSha256` / `activatedBuildSha256` / `needsRestart`：换包没重启一眼可见；同一版本号重打包也能分辨（内存 sha ≠ 磁盘 sha）。
 - `ensure-voice` 增加 120 s 总预算 + 20 s 停滞检测（`DSH_COLUMBINA_VOICE_STALL_MS` 可调）。
 - npm 包去掉 `src/`：条目 607 → 465，tarball 148.56 → 148.11 MB。
 - 路由路径解码容错：GBK 百分号编码不再整条路由 500。
@@ -283,11 +283,11 @@ node scripts/migrate-assets.mjs --move
 curl http://127.0.0.1:<DSH 端口>/dsh-columbina-pet-7340/healthz
 ```
 
-版本一栏有三个字段：`version`（磁盘上 `package.json` 的版本，请求时现读）、`activatedVersion`（内存里正在跑的）、`buildSha256`（磁盘上 `lib/index.js` 的 sha256）。三个对得上，说明跑的就是磁盘上那份代码；`version` 比 `activatedVersion` 新，就是换包没重启。
+版本一栏有四个字段：`version`（磁盘上 `package.json` 的版本，请求时现读）、`activatedVersion`（内存里正在跑的）、`buildSha256`（磁盘上 `lib/index.js` 现在的 sha256）、`activatedBuildSha256`（**插件激活那一刻**算的 sha256，留在内存里，不随磁盘变化）。前三个对得上说明版本一致；`version` 比 `activatedVersion` 新，就是换包没重启；`buildSha256` 与 `activatedBuildSha256` 不同，就是**同一个版本号又重新打过包、而内存里跑的还是旧那份**（`needsRestart: true`）。
 
 `assetRoots.externalActive` 为 `true` 且 `externalFileCount > 0` 时，说明外置素材已经命中（1.0.3+）；`voicePack.active` 为 `false` 时看 `voicePack.lastError`。
 
-另有一个不用访问 URL 的旁证：`~/.dsh/columbina-pet/activation.json` 记录最近一次激活的时间、版本、`buildSha256`，以及磁盘版本与运行版本是否不一致（`needsRestart`）。
+另有一个不用访问 URL 的旁证：`~/.dsh/columbina-pet/activation.json` 记录最近一次激活的时间、版本、`buildSha256`、`activatedBuildSha256`，以及磁盘版本与运行版本是否不一致（`needsRestart`）。
 
 ### 第一次启动
 
