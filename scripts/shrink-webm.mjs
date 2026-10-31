@@ -2,9 +2,12 @@
 /**
  * 缩小 assets/webm 体积（保持 500×500 与 VP9 alpha 通道，画面无损级）。
  *
- * 背景：换装用的 246 段 live webm 是 VP8 + alpha，码率约 4.7 Mb/s，合计 147 MB，
- * 占整包体积的 80%。同类素材在桌面上只显示约 160–400 px，用 VP9 alpha 重编码到
- * crf 38 后单文件 741 KB → 155 KB，肉眼在小尺寸下几乎无差。
+ * 背景：换装用的 229 段 live webm 是 VP8 + alpha，码率约 4.7 Mb/s，合计 143 MB，
+ * 占整包体积的 90% 以上。桌面上只显示约 160–400 px，用 VP9 alpha 重编码到 crf 24 后
+ * 758 KB → 434 KB（本地实测 143.4 MB → 87.3 MB，首帧 RGB 平均差 0.5/255、alpha 最大差 4/255）。
+ * 注意：1.1.12 默认**不**发压缩版（发的是原始素材），这个脚本留作想瘦身的人自己跑。
+ * 另外 17 段官方形象是 VP9 640×360（没有 alpha），体积本来就小，脚本会自动跳过。
+ * crf 越高越小：crf 30 能到 62.4 MB，但 crf 24 更保险（肉眼几乎无差，留足余量）；默认值就是 24。
  *
  * 用法：
  *   FFMPEG=/path/to/ffmpeg node scripts/shrink-webm.mjs
@@ -32,11 +35,25 @@ const opt = (name, fallback) => {
 	return i >= 0 && args[i + 1] ? args[i + 1] : fallback;
 };
 const ffmpeg = process.env.FFMPEG || "ffmpeg";
-const crf = opt("--crf", "38");
+const crf = opt("--crf", "24");
 const jobs = Math.max(1, Number(opt("--jobs", "2")));
 const backupDir = opt("--backup", "");
 const tmpDir = opt("--tmp", join(tmpdir(), "columbina-webm"));
 if (!existsSync(tmpDir)) mkdirSync(tmpDir, { recursive: true });
+
+/** 探一次视频流编码：vp8 走 libvpx，vp9 走 libvpx-vp9，其他一律跳过。 */
+function probeCodec(file) {
+	return new Promise((ok) => {
+		const p = spawn(ffmpeg, ["-hide_banner", "-i", file], { stdio: ["ignore", "ignore", "pipe"] });
+		let err = "";
+		p.stderr.on("data", (d) => (err += d.toString()));
+		p.on("error", () => ok(null));
+		p.on("close", () => {
+			const hit = /Video: (vp8|vp9)/i.exec(err);
+			ok(hit ? hit[1].toLowerCase() : null);
+		});
+	});
+}
 
 function run(cmd, argv) {
 	return new Promise((ok, bad) => {
@@ -67,11 +84,16 @@ async function worker() {
 		const tmp = join(tmpDir, `${basename(name)}.tmp.webm`);
 		const before = statSync(src).size;
 		try {
+			const codec = await probeCodec(src);
+			if (!codec) throw new Error("不是 vp8/vp9，跳过");
+			const decoder = codec === "vp8" ? "libvpx" : "libvpx-vp9";
 			await run(ffmpeg, [
 				"-hide_banner",
 				"-loglevel",
 				"error",
 				"-y",
+				"-c:v",
+				decoder,
 				"-i",
 				src,
 				"-map",

@@ -518,14 +518,14 @@ class PetSprite {
     // name 形态照旧按「素材根 + 名字」拼（名字即文件名）。
     el.src = url || this.assetBase + encodeURIComponent(next) + (S.ANIMATION_EXT || '.webm');
     el.loop = !nextOnce;
-    // [patch] 待机动画放慢到每段约 20 秒：素材只有 2~3 秒，靠 playbackRate 拉长
+    // [patch] 待机动画慢放 0.6×：素材只有 2~3 秒，慢一点不那么重复，
+    // 但不再做「拉长到 20 秒」那种极端慢放——30 fps 拉到 0.12× 只剩 3.6 fps，
+    // 看着就是一顿一顿的（用户反馈「卡卡的」）。重复感交给「切换间隔」的停留机制处理。
     el.playbackRate = 1;
-    if (/待机/.test(String(next || ''))) {
-      el.addEventListener('loadedmetadata', () => {
-        const dur = Number.isFinite(el.duration) && el.duration > 0 ? el.duration : 2.6;
-        el.playbackRate = Math.max(0.08, Math.min(1, dur / 20));
-        try { if (typeof this.log === 'function') this.log('idle rate=' + el.playbackRate.toFixed(3)); } catch (e) { /* ignore */ }
-      }, { once: true });
+    const idleList = this.animations && Array.isArray(this.animations.idle) ? this.animations.idle : [];
+    if (idleList.indexOf(String(next || '')) >= 0) {
+      el.playbackRate = 0.6;
+      try { if (typeof this.log === 'function') this.log('idle rate=0.600'); } catch (e) { /* ignore */ }
     }
     el.muted = true;
     el.autoplay = true;

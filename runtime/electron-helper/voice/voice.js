@@ -49,6 +49,10 @@
   var officialUnavailable = false;
 
   var VOLUME = 0.9;
+  // 音量 / 静音：桌宠自己记一份（localStorage），右键菜单里改，不占用宿主设置面板的键位。
+  var VOLUME_KEY = 'columbina-voice-volume-v1';
+  var volumePref = VOLUME;
+  var mutedPref = false;   // true = 静音（音量归零，不改 volumePref）
   var MAX_CLIPS = bank.maxClips || 2;
   var STABLE_MS = 550;        // 气泡文字稳定多久才认为「说完了」
   var COOLDOWN_MS = 1200;     // 两次念之间至少隔这么久
@@ -378,10 +382,14 @@
     speaking = false;
   }
 
+  function effectiveVolume() {
+    return mutedPref ? 0 : volumePref;
+  }
+
   function playClip(clip) {
     return new Promise(function (resolve) {
       var audio = new Audio(CLIP_BASE + clip.id + '.ogg');
-      audio.volume = VOLUME;
+      audio.volume = effectiveVolume();
       var token = ++playToken;
       current = audio;
       speaking = true;
@@ -457,7 +465,7 @@
       return new Promise(function (resolve) {
         var audio = new Audio(OFFICIAL_BASE + file);
         audio.preload = 'auto';
-        audio.volume = VOLUME;
+        audio.volume = effectiveVolume();
         var token = ++playToken;
         current = audio;
         speaking = true;
@@ -726,6 +734,217 @@
         }));
       }
     } catch (e) { /* ignore */ }
+  }
+
+  function readVolumePrefs() {
+    try {
+      var raw = window.localStorage && window.localStorage.getItem(VOLUME_KEY);
+      if (!raw) return;
+      var prefs = JSON.parse(raw);
+      if (typeof prefs.volume === 'number' && isFinite(prefs.volume)) {
+        volumePref = Math.min(1, Math.max(0, prefs.volume));
+      }
+      if (typeof prefs.muted === 'boolean') mutedPref = prefs.muted;
+    } catch (e) { /* ignore */ }
+  }
+
+  function saveVolumePrefs() {
+    try {
+      if (window.localStorage) {
+        window.localStorage.setItem(VOLUME_KEY, JSON.stringify({ volume: volumePref, muted: mutedPref }));
+      }
+    } catch (e) { /* ignore */ }
+  }
+
+  /** 音量改动立刻生效：正在放的那句也跟着变。 */
+  function applyVolume() {
+    try {
+      if (current) current.volume = effectiveVolume();
+    } catch (e) { /* ignore */ }
+  }
+
+  // ---------- 夜间勿扰：这段时间里不主动开口（手动点台词照常播） ----------
+  var QUIET_KEY = 'columbina-voice-quiet-v1';
+  var quietPref = { on: false, start: 23 * 60, end: 8 * 60 };
+
+  function readQuietPrefs() {
+    try {
+      var raw = window.localStorage && window.localStorage.getItem(QUIET_KEY);
+      if (!raw) return;
+      var prefs = JSON.parse(raw);
+      if (typeof prefs.on === 'boolean') quietPref.on = prefs.on;
+      if (typeof prefs.start === 'number' && prefs.start >= 0 && prefs.start < 1440) quietPref.start = prefs.start;
+      if (typeof prefs.end === 'number' && prefs.end >= 0 && prefs.end < 1440) quietPref.end = prefs.end;
+    } catch (e) { /* ignore */ }
+  }
+
+  function saveQuietPrefs() {
+    try {
+      if (window.localStorage) {
+        window.localStorage.setItem(QUIET_KEY, JSON.stringify(quietPref));
+      }
+    } catch (e) { /* ignore */ }
+  }
+
+  function quietText() {
+    return hhmmText(quietPref.start) + '–' + hhmmText(quietPref.end);
+  }
+
+  function hhmmText(minutes) {
+    var h = Math.floor(minutes / 60) % 24;
+    var m = minutes % 60;
+    return (h < 10 ? '0' : '') + h + ':' + (m < 10 ? '0' : '') + m;
+  }
+
+  /** 现在是不是落在勿扰时段里（支持跨午夜，比如 23:00–08:00）。 */
+  function inQuietWindow(now) {
+    if (!quietPref.on) return false;
+    var at = now instanceof Date ? now : new Date();
+    var minutes = at.getHours() * 60 + at.getMinutes();
+    var start = quietPref.start;
+    var end = quietPref.end;
+    if (start === end) return false;
+    if (start < end) return minutes >= start && minutes < end;
+    return minutes >= start || minutes < end;
+  }
+
+  // ---------- 省电模式：闲着的时候把循环播放的 idle 视频按暂停（画面定格，几乎看不出） ----------
+  var POWER_KEY = 'columbina-voice-power-v1';
+  var powerPref = false;
+  var powerTimer = null;
+  var powerPaused = [];
+  var powerHold = false;
+
+  // ---------- 待机动作池 ----------
+  // curated：每套形象自带的中性待机（voice-index.js 的 tree.idle，不会随机哭/坐牢）
+  // all：这套形象的全部动作（含剧情动作，随机出现）
+  // custom：右键菜单里逐个勾，picks[skinId]，一个都没勾就退回 curated
+  var IDLE_KEY = 'columbina-voice-idle-v1';
+  var idlePref = { mode: 'curated', picks: {} };
+  function readIdlePrefs() {
+    try {
+      var raw = localStorage.getItem(IDLE_KEY);
+      if (!raw) return idlePref;
+      var saved = JSON.parse(raw);
+      if (saved && (saved.mode === 'curated' || saved.mode === 'all' || saved.mode === 'custom')) idlePref.mode = saved.mode;
+      if (saved && saved.picks && typeof saved.picks === 'object') idlePref.picks = saved.picks;
+    } catch (e) { /* ignore */ }
+    return idlePref;
+  }
+  function saveIdlePrefs() {
+    try {
+      localStorage.setItem(IDLE_KEY, JSON.stringify({ mode: idlePref.mode, picks: idlePref.picks, at: Date.now() }));
+    } catch (e) { /* ignore */ }
+  }
+  /** 这套形象的全部动作（voice-index.js 里烘焙的 skin.pool） */
+  function skinPool(skin) {
+    if (!skin) return [];
+    if (skin.pool && skin.pool.length) return skin.pool;
+    return (skin.tree && skin.tree.idle) ? skin.tree.idle : [];
+  }
+  function idlePicksOf(skin) {
+    if (!skin) return [];
+    var arr = idlePref.picks && idlePref.picks[skin.id];
+    return Array.isArray(arr) ? arr : [];
+  }
+  /** 按当前模式算出真正要用的待机池 */
+  function resolveIdlePool(skin) {
+    if (!skin) return [];
+    var curated = (skin.tree && skin.tree.idle) ? skin.tree.idle.slice() : [];
+    if (idlePref.mode === 'all') return skinPool(skin).slice();
+    if (idlePref.mode === 'custom') {
+      var all = skinPool(skin);
+      var picked = idlePicksOf(skin).filter(function (n) { return all.indexOf(n) >= 0; });
+      if (picked.length) return picked;
+    }
+    return curated;
+  }
+  function idleModeText() {
+    var skin = currentSkin();
+    if (idlePref.mode === 'all') return '全部动作 · ' + skinPool(skin).length + ' 段';
+    if (idlePref.mode === 'custom') {
+      var n = idlePicksOf(skin).length;
+      return n ? ('自己选 · ' + n + ' 段') : '精选';
+    }
+    return '精选 · ' + ((skin && skin.tree && skin.tree.idle) ? skin.tree.idle.length : 0) + ' 段';
+  }
+  function stripAnimPrefix(name, skin) {
+    var p = (skin && (skin.poolPrefix || skin.prefix)) || '';
+    var s = String(name || '');
+    return (p && s.indexOf(p) === 0) ? s.slice(p.length) : s;
+  }
+  /** 把算出来的池子套到正在跑的 sprite 上（换形象会走 applySkin，那条路自己算） */
+  function applyIdlePool(opts) {
+    var skin = currentSkin();
+    var sprite = getSprite();
+    if (!skin || !sprite || !sprite.animations) return false;
+    var pool = resolveIdlePool(skin);
+    if (!pool.length) return false;
+    sprite.animations.idle = pool;
+    if (opts && opts.replay && typeof sprite.playOnce === 'function' && pool.indexOf(sprite.anim) < 0) {
+      try { sprite.playOnce(pool[0]); } catch (e) { /* ignore */ }
+    }
+    return true;
+  }
+
+  function readPowerPrefs() {
+    try {
+      var raw = window.localStorage && window.localStorage.getItem(POWER_KEY);
+      if (raw === '1') powerPref = true;
+    } catch (e) { /* ignore */ }
+  }
+
+  function savePowerPrefs() {
+    try {
+      if (window.localStorage) window.localStorage.setItem(POWER_KEY, powerPref ? '1' : '0');
+    } catch (e) { /* ignore */ }
+  }
+
+  function pauseIdleVideos() {
+    powerTimer = null;
+    if (!powerPref) return;
+    powerHold = true;
+    // 待机动画走的是 playOnce（loop=false，播完由 handleEnded 重新起一段），
+    // 所以**不能**再按 video.loop 过滤，否则一段也停不住（1.1.12 的省电模式就是这么失效的）。
+    var list = document.querySelectorAll('video');
+    for (var i = 0; i < list.length; i++) {
+      var video = list[i];
+      if (video.paused || video.ended) continue;
+      try {
+        video.pause();
+        powerPaused.push(video);
+      } catch (e) { /* ignore */ }
+    }
+    // 定格期间任何试图开播的视频都按回去（宿主 /anim 点播、平衡刷新、碎碎念都会换源播放）
+    try { document.addEventListener('play', holdPlayingVideo, true); } catch (e) { /* ignore */ }
+  }
+
+  /** 定格期间：谁想播就按回去。鼠标一动 kickPowerTimer 会先摘掉这个监听。 */
+  function holdPlayingVideo(e) {
+    if (!powerHold || !powerPref) return;
+    var v = e && e.target;
+    if (!v || v.tagName !== 'VIDEO') return;
+    try {
+      v.pause();
+      if (powerPaused.indexOf(v) < 0) powerPaused.push(v);
+    } catch (err) { /* ignore */ }
+  }
+
+  function resumeIdleVideos() {
+    powerHold = false;
+    try { document.removeEventListener('play', holdPlayingVideo, true); } catch (e) { /* ignore */ }
+    for (var i = 0; i < powerPaused.length; i++) {
+      try { powerPaused[i].play(); } catch (e) { /* ignore */ }
+    }
+    powerPaused.length = 0;
+  }
+
+  /** 有动静就重新计时；省电模式关着就什么都不做。 */
+  function kickPowerTimer() {
+    if (!powerPref) return;
+    if (powerTimer) clearTimeout(powerTimer);
+    resumeIdleVideos();
+    powerTimer = setTimeout(pauseIdleVideos, 30000);
   }
 
   function readLangPrefs() {
@@ -1219,7 +1438,10 @@
       '闲暇一下 · 娅娅的表情包时刻': 'ひととき · コロンビーナのスタンプ',
       '发一张 Q 版表情': 'Q 版スタンプを一枚',
       '天气': '天気', '今天的天气': '今日の天気', '重新定位': '位置を更新',
+      '音量': '音量', '静音：开': 'ミュート：オン', '静音：关': 'ミュート：オフ',
+      '夜间勿扰': 'おやすみモード', '开启勿扰': 'オンにする', '关闭勿扰': 'オフにする',
       '播报一次': 'いま聞いてみる', '按网络重新认城市': 'ネットから位置を更新',
+      '待机动作': '待機モーション', '精选（推荐）': 'おすすめ', '当前形象全部动作': 'このモデルの全動作', '自己选…': '自分で選ぶ', '选择动作…': 'モーションを選ぶ',
     },
     en: {
       '打开网站': 'Open site', '打开软件': 'Open app', '查看余额': 'Check balance',
@@ -1238,7 +1460,10 @@
       '闲暇一下 · 娅娅的表情包时刻': 'A quiet moment · sticker time',
       '发一张 Q 版表情': 'Send a chibi sticker',
       '天气': 'Weather', '今天的天气': "Today's weather", '重新定位': 'Refresh location',
+      '音量': 'Volume', '静音：开': 'Mute: on', '静音：关': 'Mute: off',
+      '夜间勿扰': 'Quiet hours', '开启勿扰': 'Turn on', '关闭勿扰': 'Turn off',
       '播报一次': 'Ask now', '按网络重新认城市': 'Re-detect from network',
+      '待机动作': 'Idle actions', '精选（推荐）': 'Curated', '当前形象全部动作': 'All actions', '自己选…': 'Pick my own…', '选择动作…': 'Choose actions…',
     },
   };
 
@@ -1444,6 +1669,8 @@
         tree.moves = tree.moves || {};
         tree.moves.actions = tree.moves.actions || [];
       }
+      var idlePool = resolveIdlePool(skin);
+      if (idlePool.length) tree.idle = idlePool;
       installAnimPacing(sprite);
       sprite.animations = tree;
       if (Array.isArray(tree.idle) && tree.idle.length && typeof sprite.playOnce === 'function') {
@@ -2074,6 +2301,113 @@
     return { label: '原声台词', children: groups };
   }
 
+  /** 右键菜单里的省电模式：闲着 30 秒后暂停循环播放的待机动图。 */
+  function buildPowerBranch() {
+    return {
+      label: '省电模式',
+      hint: powerPref ? '开 · 闲着 30 秒后暂停待机动图' : '关 · 一直播',
+      children: [
+        {
+          label: powerPref ? '关闭省电' : '开启省电',
+          hint: powerPref ? '动画照常播' : '定格待机动图，省 CPU / 电量',
+          action: 'columbina-power',
+          __columbinaPowerToggle: true,
+        },
+      ],
+    };
+  }
+
+  /** 右键菜单里的待机动作：精选 / 全部 / 自己勾。 */
+  function buildIdleBranch() {
+    var skin = currentSkin();
+    var pool = skinPool(skin);
+    var picks = idlePicksOf(skin);
+    var modes = [
+      ['curated', '精选（推荐）', '中性待机，不会随机哭/坐牢'],
+      ['all', '当前形象全部动作', '共 ' + pool.length + ' 段，剧情动作也会出现'],
+      ['custom', '自己选…', picks.length ? ('已选 ' + picks.length + ' 段') : '在下面逐个勾'],
+    ];
+    var children = modes.map(function (m) {
+      return {
+        label: m[1],
+        hint: (idlePref.mode === m[0] ? '当前 · ' : '') + m[2],
+        action: 'columbina-idle',
+        __columbinaIdleMode: m[0],
+      };
+    });
+    if (idlePref.mode === 'custom' && pool.length) {
+      children.push({
+        label: '选择动作…',
+        hint: '勾选立即生效',
+        children: pool.map(function (name) {
+          var on = picks.indexOf(name) >= 0;
+          return {
+            label: (on ? '✓ ' : '　') + stripAnimPrefix(name, skin),
+            hint: on ? '已选' : '',
+            action: 'columbina-idle',
+            __columbinaIdlePick: name,
+          };
+        }),
+      });
+    }
+    return { label: '待机动作', hint: idleModeText(), children: children };
+  }
+
+  /** 右键菜单里的夜间勿扰：开关 + 几个常用时段。 */
+  function buildQuietBranch() {
+    var presets = [
+      [22 * 60, 7 * 60],
+      [23 * 60, 8 * 60],
+      [0, 9 * 60],
+      [1 * 60, 10 * 60],
+    ];
+    return {
+      label: '夜间勿扰',
+      hint: quietPref.on ? '开 · ' + quietText() : '关',
+      children: [
+        {
+          label: quietPref.on ? '关闭勿扰' : '开启勿扰',
+          hint: quietPref.on ? '现在会说话' : '这段时间不主动开口',
+          action: 'columbina-quiet',
+          __columbinaQuietToggle: true,
+        },
+      ].concat(presets.map(function (range) {
+        var current = quietPref.start === range[0] && quietPref.end === range[1];
+        return {
+          label: hhmmText(range[0]) + '–' + hhmmText(range[1]),
+          hint: current ? '当前' : '',
+          action: 'columbina-quiet',
+          __columbinaQuietStart: range[0],
+          __columbinaQuietEnd: range[1],
+        };
+      })),
+    };
+  }
+
+  /** 右键菜单里的音量：静音开关 + 五档音量。 */
+  function buildVolumeBranch() {
+    var choices = [0.2, 0.4, 0.6, 0.8, 1];
+    return {
+      label: '音量',
+      hint: mutedPref ? '静音' : Math.round(volumePref * 100) + '%',
+      children: [
+        {
+          label: mutedPref ? '静音：开' : '静音：关',
+          hint: '点一下切换',
+          action: 'columbina-volume',
+          __columbinaMute: true,
+        },
+      ].concat(choices.map(function (value) {
+        return {
+          label: Math.round(value * 100) + '%',
+          hint: (!mutedPref && Math.abs(value - volumePref) < 0.001) ? '当前' : '',
+          action: 'columbina-volume',
+          __columbinaVolume: value,
+        };
+      })),
+    };
+  }
+
   /** 右键菜单里的碎碎念快捷设置（长期设置仍在 设置 → 哥伦比娅 · 语音）。 */
   function buildWhisperBranch() {
     var intervals = [60, 75, 90, 105, 120, 150, 180];
@@ -2136,6 +2470,10 @@
           extras.push(buildLangBranch());
           extras.push(buildScaleBranch());
           extras.push(buildWeatherBranch());
+          extras.push(buildVolumeBranch());
+          extras.push(buildQuietBranch());
+          extras.push(buildPowerBranch());
+          extras.push(buildIdleBranch());
           if (extras.length) {
             var chatAt = -1;
             for (var s = 0; s < opts.tree.length; s++) {
@@ -2164,6 +2502,72 @@
             }
             if (node && typeof node.__columbinaLine === 'number') {
               playLine(lineList[node.__columbinaLine], true);
+              return undefined;
+            }
+            if (node && node.__columbinaPowerToggle) {
+              powerPref = !powerPref;
+              savePowerPrefs();
+              if (powerPref) {
+                document.addEventListener('mousemove', kickPowerTimer, { passive: true });
+                document.addEventListener('mousedown', kickPowerTimer, { passive: true });
+                kickPowerTimer();
+              } else {
+                if (powerTimer) { clearTimeout(powerTimer); powerTimer = null; }
+                resumeIdleVideos();
+              }
+              showBubble(powerPref ? '省电模式：开' : '省电模式：关', 2200, true);
+              return undefined;
+            }
+            if (node && typeof node.__columbinaIdleMode === 'string') {
+              idlePref.mode = node.__columbinaIdleMode;
+              saveIdlePrefs();
+              applyIdlePool({ replay: true });
+              showBubble('待机动作：' + idleModeText(), 2200, true);
+              return undefined;
+            }
+            if (node && typeof node.__columbinaIdlePick === 'string') {
+              var idleSkin = currentSkin();
+              var pickName = node.__columbinaIdlePick;
+              if (idleSkin) {
+                if (!idlePref.picks) idlePref.picks = {};
+                var pickedArr = (idlePref.picks[idleSkin.id] || []).slice();
+                var pickAt = pickedArr.indexOf(pickName);
+                if (pickAt >= 0) pickedArr.splice(pickAt, 1); else pickedArr.push(pickName);
+                idlePref.picks[idleSkin.id] = pickedArr;
+                idlePref.mode = 'custom';
+                saveIdlePrefs();
+                applyIdlePool();
+                showBubble(pickedArr.length ? ('待机动作勾选 ' + pickedArr.length + ' 段') : '一段都没选，先用精选', 1500, true);
+              }
+              return undefined;
+            }
+            if (node && node.__columbinaQuietToggle) {
+              quietPref.on = !quietPref.on;
+              saveQuietPrefs();
+              showBubble(quietPref.on ? '夜间勿扰：开 · ' + quietText() : '夜间勿扰：关', 2600, true);
+              return undefined;
+            }
+            if (node && typeof node.__columbinaQuietStart === 'number' && typeof node.__columbinaQuietEnd === 'number') {
+              quietPref.start = node.__columbinaQuietStart;
+              quietPref.end = node.__columbinaQuietEnd;
+              quietPref.on = true;
+              saveQuietPrefs();
+              showBubble('夜间勿扰：' + quietText(), 2600, true);
+              return undefined;
+            }
+            if (node && node.__columbinaMute) {
+              mutedPref = !mutedPref;
+              saveVolumePrefs();
+              applyVolume();
+              showBubble(mutedPref ? '已静音' : '声音回来了', 2200, true);
+              return undefined;
+            }
+            if (node && typeof node.__columbinaVolume === 'number') {
+              volumePref = Math.min(1, Math.max(0, node.__columbinaVolume));
+              mutedPref = false;
+              saveVolumePrefs();
+              applyVolume();
+              showBubble('音量 ' + Math.round(volumePref * 100) + '%', 1800, true);
               return undefined;
             }
             if (node && node.__columbinaWhisperToggle) {
@@ -2378,6 +2782,7 @@
 
   /** 说一句：四成机会念一整句，其余按场合挑一段碎片；先弹字幕再出声 */
   function whisper(scene, force) {
+    if (!force && inQuietWindow()) return null;   // 夜间勿扰：不主动说话
     if (!force && inWorkStatus()) return null;
     if (!force && (lineLocked() || speaking)) return null;   // 整句/原声台词优先，碎碎念让路
     var key = scene || 'musing';
@@ -2612,6 +3017,19 @@
   // 恢复上次选的形象 / 语言 / 模型大小（桌宠 sprite 可能比本脚本晚初始化，失败就重试几轮）
   readSkinPref();
   readLangPrefs();
+  readVolumePrefs();
+  readQuietPrefs();
+  readPowerPrefs();
+  readIdlePrefs();
+  if (powerPref) {
+    document.addEventListener('mousemove', kickPowerTimer, { passive: true });
+    document.addEventListener('mousedown', kickPowerTimer, { passive: true });
+    document.addEventListener('visibilitychange', function () {
+      if (document.hidden) resumeIdleVideos();
+      else kickPowerTimer();
+    });
+    kickPowerTimer();
+  }
   (function restoreSkin(tries) {
     var ready = applySkin(skinId, { persist: false });
     if (ready) {
