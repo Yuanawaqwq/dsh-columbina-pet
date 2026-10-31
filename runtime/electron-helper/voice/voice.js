@@ -864,7 +864,7 @@
     if (idlePref.mode === 'all') return '全部动作 · ' + skinPool(skin).length + ' 段';
     if (idlePref.mode === 'custom') {
       var n = idlePicksOf(skin).length;
-      return n ? ('自己选 · ' + n + ' 段') : '精选';
+      return n ? ('自己选 · ' + n + ' 段') : '自己选（还没勾，暂用精选）';
     }
     return '精选 · ' + ((skin && skin.tree && skin.tree.idle) ? skin.tree.idle.length : 0) + ' 段';
   }
@@ -1851,6 +1851,11 @@
       '#' + PANEL_ID + ' .cv-line input{margin:1px 0 0;accent-color:#C9AFF5;cursor:pointer;flex:0 0 auto}',
       '#' + PANEL_ID + ' .cv-mini{border:0;background:transparent;color:#9C8BC0;font-size:11px;cursor:pointer;padding:2px 4px}',
       '#' + PANEL_ID + ' .cv-mini:hover{color:#C9AFF5}',
+      '#' + PANEL_ID + ' .cv-search{width:100%;box-sizing:border-box;margin:6px 0 5px;padding:5px 9px;border-radius:9px;',
+      'border:1px solid rgba(160,132,230,.28);background:rgba(0,0,0,.22);color:#E8DEFF;font-size:11.5px;outline:0}',
+      '#' + PANEL_ID + ' .cv-search:focus{border-color:rgba(201,175,245,.72)}',
+      '#' + PANEL_ID + ' .cv-lines.tall{max-height:210px}',
+      '#' + PANEL_ID + ' .cv-empty{font-size:11px;color:#8E7FB4;padding:6px 2px}',
       '#' + PANEL_ID + ' .cv-foot{padding:7px 14px 9px;border-top:1px solid rgba(160,132,230,.14);',
       'font-size:11px;color:#8E7FB4;letter-spacing:.02em}',
     ].join('');
@@ -1923,6 +1928,46 @@
     return g.cityZh || g.city || '';
   }
 
+  // ---------- 设置面板：待机动作（可搜索勾选） ----------
+  var idleFilter = '';
+  function cvEscape(s) {
+    return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+  }
+  function idleModeRow() {
+    var modes = [['curated', '精选'], ['all', '全部动作'], ['custom', '自己选']];
+    return '<div class="cv-row"><span class="cv-lab">模式</span><div class="cv-chips">' +
+      modes.map(function (m) {
+        return '<button class="cv-chip' + (idlePref.mode === m[0] ? ' on' : '') + '" data-act="idle-mode" data-v="' +
+          m[0] + '">' + m[1] + '</button>';
+      }).join('') + '</div></div>';
+  }
+  function idleListHTML() {
+    var skin = currentSkin();
+    var pool = skinPool(skin);
+    var picks = idlePicksOf(skin);
+    var q = idleFilter.toLowerCase();
+    var rows = [];
+    for (var i = 0; i < pool.length; i++) {
+      var name = pool[i];
+      var label = stripAnimPrefix(name, skin);
+      if (q && label.toLowerCase().indexOf(q) < 0 && name.toLowerCase().indexOf(q) < 0) continue;
+      var on = picks.indexOf(name) >= 0;
+      rows.push('<label class="cv-line" title="' + cvEscape(name) + '"><input type="checkbox" data-act="idle-pick" data-v="' +
+        cvEscape(name) + '"' + (on ? ' checked' : '') + '><span>' + cvEscape(label) + '</span></label>');
+    }
+    if (!rows.length) return '<div class="cv-empty">没有匹配「' + cvEscape(idleFilter) + '」的动作</div>';
+    return rows.join('');
+  }
+  function idleCountText() {
+    return idleModeText() + '（这套共 ' + skinPool(currentSkin()).length + ' 段）';
+  }
+  function refreshIdleList() {
+    var list = document.getElementById('cv-idle-list');
+    if (list) list.innerHTML = idleListHTML();
+    var count = document.getElementById('cv-idle-count');
+    if (count) count.textContent = idleCountText();
+  }
+
   function renderPanel() {
     if (!panelEl) return;
     var target = document.getElementById('cv-body');
@@ -1942,6 +1987,16 @@
       '<div class="cv-row"><div class="cv-chips" style="flex:1;justify-content:flex-start">' + scaleChips() + '</div></div>',
       '<div class="cv-sec">2D live 形象</div>',
       '<div class="cv-row"><div class="cv-chips" style="flex:1;justify-content:flex-start">' + skinChips() + '</div></div>',
+      '<div class="cv-sec" data-sec="idle">待机动作</div>',
+      idleModeRow(),
+      '<div class="cv-row"><span class="cv-lab">当前</span><span class="cv-val" id="cv-idle-count" style="flex:1;text-align:left">' +
+        cvEscape(idleCountText()) + '</span></div>',
+      '<div class="cv-row"><span class="cv-lab">批量</span>',
+      '<button class="cv-mini" data-act="idle-all">全选</button>',
+      '<button class="cv-mini" data-act="idle-none">全不选</button>',
+      '<button class="cv-mini" data-act="idle-curated">还原精选</button></div>',
+      '<input class="cv-search" id="cv-idle-search" type="text" placeholder="搜索动作名（呆 / 哭 / 睡觉 …）" value="' + cvEscape(idleFilter) + '">',
+      '<div class="cv-lines tall" id="cv-idle-list">' + idleListHTML() + '</div>',
       '<div class="cv-sec" data-sec="lines">原声台词</div>',
       linesBlock(),
       '<div class="cv-sec" data-sec="weather">天气</div>',
@@ -1970,6 +2025,14 @@
     }
     if (all) allowedLines = null;
     writeLocalPrefs();
+  }
+
+  function panelInput(event) {
+    var el = event.target;
+    if (!el || el.id !== 'cv-idle-search') return;
+    idleFilter = String(el.value || '').trim();
+    var list = document.getElementById('cv-idle-list');
+    if (list) list.innerHTML = idleListHTML();
   }
 
   function panelClick(event) {
@@ -2016,6 +2079,50 @@
     }
     if (act === 'skin') {
       applySkin(el.getAttribute('data-v'));
+      renderPanel();
+      return;
+    }
+    if (act === 'idle-mode') {
+      idlePref.mode = el.getAttribute('data-v');
+      saveIdlePrefs();
+      applyIdlePool({ replay: true });
+      renderPanel();
+      return;
+    }
+    if (act === 'idle-pick') {
+      var pickSkin = currentSkin();
+      var pickName = el.getAttribute('data-v');
+      if (pickSkin) {
+        if (!idlePref.picks) idlePref.picks = {};
+        var head = (idlePref.picks[pickSkin.id] || []).slice();
+        var at = head.indexOf(pickName);
+        if (at >= 0) head.splice(at, 1); else head.push(pickName);
+        idlePref.picks[pickSkin.id] = head;
+        idlePref.mode = 'custom';
+        saveIdlePrefs();
+        applyIdlePool({ replay: true });
+        refreshIdleList();
+      }
+      return;
+    }
+    if (act === 'idle-all' || act === 'idle-none') {
+      var bulkSkin = currentSkin();
+      if (bulkSkin) {
+        if (!idlePref.picks) idlePref.picks = {};
+        idlePref.picks[bulkSkin.id] = act === 'idle-all' ? skinPool(bulkSkin).slice() : [];
+        idlePref.mode = 'custom';
+        saveIdlePrefs();
+        applyIdlePool({ replay: true });
+        renderPanel();
+      }
+      return;
+    }
+    if (act === 'idle-curated') {
+      var backSkin = currentSkin();
+      if (backSkin && idlePref.picks) idlePref.picks[backSkin.id] = [];
+      idlePref.mode = 'curated';
+      saveIdlePrefs();
+      applyIdlePool({ replay: true });
       renderPanel();
       return;
     }
@@ -2173,7 +2280,7 @@
   }
 
   function openSettingsOverlay(section) {
-    panelSection = section === 'lang' || section === 'scale' ? section : 'voice';
+    panelSection = section === 'lang' || section === 'scale' || section === 'idle' ? section : 'voice';
     ensurePanelStyles();
     if (panelEl) { renderPanel(); return; }
     panelEl = document.createElement('div');
@@ -2190,6 +2297,7 @@
       '</div>',
     ].join('');
     panelEl.addEventListener('click', panelClick);
+    panelEl.addEventListener('input', panelInput);
     document.body.appendChild(panelEl);
     renderPanel();
     function onKey(ev) {
@@ -2238,7 +2346,7 @@
    * 内置面板不依赖任何宿主，主题装没装都能开。
    */
   function openSettingsPanel(section) {
-    var target = section === 'lang' || section === 'scale' || section === 'whisper' ? section : 'voice';
+    var target = section === 'lang' || section === 'scale' || section === 'whisper' || section === 'idle' ? section : 'voice';
     try {
       openSettingsOverlay(target);
       return true;
@@ -2338,16 +2446,8 @@
     if (idlePref.mode === 'custom' && pool.length) {
       children.push({
         label: '选择动作…',
-        hint: '勾选立即生效',
-        children: pool.map(function (name) {
-          var on = picks.indexOf(name) >= 0;
-          return {
-            label: (on ? '✓ ' : '　') + stripAnimPrefix(name, skin),
-            hint: on ? '已选' : '',
-            action: 'columbina-idle',
-            __columbinaIdlePick: name,
-          };
-        }),
+        hint: '打开设置面板，可搜索勾选',
+        __columbinaOpenSettings: 'idle',
       });
     }
     return { label: '待机动作', hint: idleModeText(), children: children };
