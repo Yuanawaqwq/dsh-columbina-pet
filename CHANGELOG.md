@@ -11,7 +11,12 @@
 - **网页右键菜单与桌面端对齐**：`webPhysicsBranch()`（「真实物理：开 / 关」，键 `columbina-physics-web-v1`，关掉时 `throwPower: 0 / restitution: 0 / ceilingBounce: false / groundFriction: 40 / petCollision: false`）插在「回到初始位置」之后；末尾分支顺序改为 `音量 → 夜间勿扰 → 省电模式 → 语音包与素材 → 设置面板 → 待机动作`；设置面板分区顺序统一为 碎碎念 / 语言 / 模型大小 / 2D live 形象 / 待机动作 / 语音包与素材 / 原声台词 / 天气；新增菜单项的日 / 英文案一并补齐
 - **天气播报文案统一**：温度带 `℃`，中 / 日 / 英各自成句（`今天小雨，21℃，17~24℃ · 广州` / `今日は…` / `Today …, 21℃ (17–24℃) · Guangzhou`）
 - **自动碎碎念不再掐断长句**：`playWebLine()` 一开场就 `pause()` 掉上一句音频，而热身（12 s 后）、间隔、手势补播、天气接话这些来源互相不知道对方在播什么——实测 11 秒内念了两句长台词，前一句只播了一半。新增 `webVoiceBusy()` / `webAutoVoice(source, scene, label)`：自动来源发现上一句还在播就让路并打 `[dsh-pet] 碎碎念让路 来源=…`，只有手动点桌宠或「原声台词」点播才会强制换句；热身改为 `wvWarmedRef` 每会话只排一次（`wvReady` 变化会让 effect 重挂，原来会补第二句）
-- **已知未尽事项**：素材路由仍不支持 `accept-ranges` / 206，`audio.duration` 依赖客户端兜底；根治（顺带让 webm 可 seek）留待后续版本评估
+- **已知未尽事项**：webm 素材尚未支持范围请求的快速 seek（视频用的是 `preload="auto"` 全量加载，不影响播放）；`src/` 与 bundle 已漂移，重新从 TS 构建前需补齐
+- **碎碎念气泡整串乱码 / 豆腐块（根因：请求体按 UTF-8 硬解）**：`readBody()` 直接 `Buffer.concat(chunks).toString("utf8")`，没有任何编码校验。Windows 控制台的 curl / PowerShell 发中文时按 GBK 出字节，非法序列被换成 U+FFFD 后照样写进 say，气泡里就是一串菱形问号加零散怪字（现场：`\ufffdԲ飺\ufffdܿ…`），切模式重挂时会原样重放。复现：python 把 GBK 编的 JSON 体 POST 到 `/broadcast` → `/state` 里立刻出现同一族乱码。修法：新增 `decodeBodyBuffer()`（严格 UTF-8 → 失败按 GB18030 重解并 warn → 再失败退回有损 UTF-8）、`looksMojibake()`（含 U+FFFD 或 `锟斤拷/烫烫烫/屯屯屯` 判乱码）；`/broadcast` 与 `publishWhisper` 的模型输出现乱码一律拒绝写入
+- **素材路由支持 `Range` / 206 / 416**：`sendFile()` 新增 `parseRangeHeader()`，200 响应补 `accept-ranges: bytes`；带范围时用独立 fd 按区间读（`createReadStream(file,{start,end})`），`If-None-Match` 命中仍给 304，起点越界给 416 + `content-range: bytes */size`。至此 `audio.duration` 能拿真值，客户端 `timeupdate` 兜底仍保留（上面那条「已知未尽事项」已由本项解决）
+- **本地接口挡住浏览器跨站写**：新增 `crossSiteWriteBlocked(req)`，非 GET/HEAD/OPTIONS 且 `sec-fetch-site: cross-site` + `Origin` 是 http(s) 他站时返回 `403 {"reason":"cross-site-blocked"}`；此前 24 条路由全无来源校验，任意网页都能跨站 POST `/broadcast` 往气泡里塞字、`/whisper` 烧 token。同源页面（`same-origin`）、桌面 Helper（`file://` 的 `Origin: null`）、本机脚本（不带 Origin）都不受影响
+- **切回网页模式后不再空转 Helper**：`syncDesktop()` 改为「有桌面宠物才 `startHelper()`」，否则打一行日志后不再拉起；`desktopModeEverActive` 的粘性只保留给「从未有过桌面宠物」的纯浏览器用户。旧实现切回 `web` 后仍留着 3 个无窗口进程（约 178 MB）
+- **`voice-pack.json` 的 `version` 随启动刷新**：新增 `refreshVoicePackMarker()`，语音包已就绪时按 `PACKAGE_VERSION` 重写 marker（旧实现只在迁移那一次写，marker 常年停在 1.1.5）
 
 ## 1.2.0 — 2026-10
 
