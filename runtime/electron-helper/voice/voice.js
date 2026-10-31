@@ -905,7 +905,7 @@
     if (!powerPref) return;
     powerHold = true;
     // 待机动画走的是 playOnce（loop=false，播完由 handleEnded 重新起一段），
-    // 所以**不能**再按 video.loop 过滤，否则一段也停不住（1.1.12 的省电模式就是这么失效的）。
+    // 所以**不能**再按 video.loop 过滤，否则一段也停不住（省电模式最早就是这么失效的）。
     var list = document.querySelectorAll('video');
     for (var i = 0; i < list.length; i++) {
       var video = list[i];
