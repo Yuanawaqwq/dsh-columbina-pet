@@ -10,6 +10,7 @@
 - **宿主 `/voice/health` 与 `/voice/repair` 加 CORS 头**：桌面 helper 页面是 `file://` 源，取同源数据会被浏览器拦；两个响应补 `access-control-allow-origin: *`
 - **网页右键菜单与桌面端对齐**：`webPhysicsBranch()`（「真实物理：开 / 关」，键 `columbina-physics-web-v1`，关掉时 `throwPower: 0 / restitution: 0 / ceilingBounce: false / groundFriction: 40 / petCollision: false`）插在「回到初始位置」之后；末尾分支顺序改为 `音量 → 夜间勿扰 → 省电模式 → 语音包与素材 → 设置面板 → 待机动作`；设置面板分区顺序统一为 碎碎念 / 语言 / 模型大小 / 2D live 形象 / 待机动作 / 语音包与素材 / 原声台词 / 天气；新增菜单项的日 / 英文案一并补齐
 - **天气播报文案统一**：温度带 `℃`，中 / 日 / 英各自成句（`今天小雨，21℃，17~24℃ · 广州` / `今日は…` / `Today …, 21℃ (17–24℃) · Guangzhou`）
+- **自动碎碎念不再掐断长句**：`playWebLine()` 一开场就 `pause()` 掉上一句音频，而热身（12 s 后）、间隔、手势补播、天气接话这些来源互相不知道对方在播什么——实测 11 秒内念了两句长台词，前一句只播了一半。新增 `webVoiceBusy()` / `webAutoVoice(source, scene, label)`：自动来源发现上一句还在播就让路并打 `[dsh-pet] 碎碎念让路 来源=…`，只有手动点桌宠或「原声台词」点播才会强制换句；热身改为 `wvWarmedRef` 每会话只排一次（`wvReady` 变化会让 effect 重挂，原来会补第二句）
 - **已知未尽事项**：素材路由仍不支持 `accept-ranges` / 206，`audio.duration` 依赖客户端兜底；根治（顺带让 webm 可 seek）留待后续版本评估
 
 ## 1.2.0 — 2026-10
