@@ -23,6 +23,7 @@
 - **音量与一键静音**（桌面 + 网页）：静音开关 + 20/40/60/80/100 % 五档，和语音设置存在同一个 localStorage 键
 - **语音包与素材检查 / 一键修复**：宿主新增 `GET /voice/health` 与 `POST /voice/repair`（返回语音包、webm、表情包的目录/数量/体积），网页面板多出「语音包与素材」区块，缺文件一键重下
 - **网页天气城市名本地化**：ipwho.is 只给英文城市名，现在走 open-meteo geocoding（`language=zh`）并缓存 6 小时；定位结果带经纬度，二次查询不再重新定位
+- **`/healthz` 新增 `activatedBuildSha256` 与 `needsRestart`**：`buildSha256` 是请求时读磁盘，同一个版本号重打包时它必然等于新盘，看不出内存里跑的是旧代码；现在把**激活那一刻**的 sha 定格在内存里，两者不同即 `needsRestart: true`。`activation.json` 同步补 `activatedBuildSha256`
 - 素材仍是 1.1.11 的原始 webm（147 MB），本版**没有**做有损压缩：`scripts/shrink-webm.mjs` 留作可选工具
 
 ## 1.1.11 — 2026-10
