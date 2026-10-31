@@ -268,11 +268,11 @@ npm install dsh-columbina-pet
 
 **完整退出 DSH 再打开**（关窗口、刷新页面都不算重启）。
 
-### 从 npm 安装（1.1.11+）
+### 从 npm 安装（1.2.0）
 
 ```bash
 cd ~/.dsh/profiles/<你的 profile>
-npm install dsh-columbina-pet@1.1.11
+npm install dsh-columbina-pet@1.2.0
 ```
 
 装完同样把 `dsh-columbina-pet` 加进 profile 的 `dsh.profile.bundles`，然后**完整退出 DSH 再打开**。
