@@ -431,6 +431,12 @@ node node_modules/dsh-columbina-pet/scripts/ensure-electron.mjs
 - 想加台词：在 `voice-index.js` 的 `lines` / `menu` 里加条目，把音频放进对应语言目录，重启桌宠即可。菜单标签会映射到台词下标，改标签别忘了同步改 `menu`。
 - 想换角色：替换四套 `webm` 动作、`assets/memes`、`voice/official/*` 与 `voice-index.js`，再把 `assets/config.jsonc` 里的名字与人设改成你的角色。
 
+**语音包是外置的，不在 npm 包体里。** 新装用户首次启动时由 `scripts/ensure-voice.mjs` 下载（约 33 MB，带 sha256 校验，失败会依次换 `gh-proxy.com` / `ghfast.top` 镜像）。它的地址写在 `package.json` 的 `voicePack.url`，钉在 **v1.1.4 那个 Release 资产**上——那份资产是全世界新装用户**唯一的语音来源**，属于不可变归档：
+
+- **不要删除、不要替换**它。删掉之后新装用户只会静默降级成「无原声」，`/voice/repair` 也修不回来。
+- 发版前跑一次 `node scripts/check-voice-asset.mjs`（秒级，只发一个 HEAD）：资产 404 或大小不符会直接失败；本机到 github.com 不通时会自动用镜像判定，只报警告、不误判成资产丢失。
+- 将来真要更新语音内容，走「新开一个 Release 资产 + 同时改 `voicePack.url` 与 `sha256`」，别原地覆盖旧文件。
+
 > 「打开设置面板 / 选择台词」的侧边栏面板由姊妹插件 [dsh-columbina-theme](https://github.com/Columbina-sn/dsh-columbina-theme) 提供，本仓库**不含**它。不装也能用右键菜单完成所有设置。
 
 ## 天气播报

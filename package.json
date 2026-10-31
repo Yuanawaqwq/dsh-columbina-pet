@@ -61,7 +61,8 @@
   },
   "voicePack": {
     "url": "https://github.com/Yuanawaqwq/dsh-columbina-pet/releases/download/v1.1.4/dsh-columbina-pet-voice-1.1.4.tar.gz",
-    "sha256": "9de60b37b9f808924d752175c6a78934a51d71277d31862dfcabaccd83375d1b"
+    "sha256": "9de60b37b9f808924d752175c6a78934a51d71277d31862dfcabaccd83375d1b",
+    "bytes": 32933606
   },
   "license": "MIT",
   "engines": {
