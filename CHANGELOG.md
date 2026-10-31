@@ -1,5 +1,17 @@
 # 更新日志
 
+## 1.2.1 — 2026-10
+
+- **碎碎念字幕比声音先消失（根因 + 兜底）**：宿主 `sendFile()` 只回 `200 + content-length`，不返回 `accept-ranges`，也不处理 `Range` 请求（实测带 `Range: bytes=0-100` 仍回 200 全量）。Chromium 对不可 seek 的 Ogg 常把 `audio.duration` 报成 `Infinity`，旧逻辑 `Math.round((audio.duration || 4) * 1000) + 1200` 于是得到 `Infinity`，`armWhisperSubtitleHide()` 判为非法 hold 退回 3600 ms——声音还在读，字幕先没了。新增 `trackWhisperSubtitleAudio(audio, text)`：在 `triggerWhisper()` 之后绑定真实音频，每次 `timeupdate` 重排收起时刻（duration 有限用 `left + 600`，Infinity/NaN 用 1500 ms 心跳顶着），`ended` 立即收，`paused` 后不再有心跳、1.5 秒内自然收；用 `textContent` 比对保证旧音频不会误伤新句
+- **碎碎念字幕被子孙容器裁掉**：字幕改为挂在 `document.body` 的独立浮层（`[data-dsh-pet-subtitle]`，`position: fixed`，`z-index: 2147482000`），不再寄生在 `.dsh-pet-root` 里；祖先的 `transform` / `contain` / `overflow: hidden` 再也裁不到长句
+- **拖动宠物时字幕不跟随**：显示期间用 `requestAnimationFrame` 逐帧把浮层的 `left/top/width/height` 同步到 `.dsh-pet-root` 的实时矩形（`syncWhisperSubtitleBox()` + `whisperSubtitleFollow/start/stop`），`--dsh-pet-size` / `--dsh-pet-font-bubble` 只在换根节点或宽度变化 > 0.5 px 时重取；`hideWhisperSubtitle()` 与定时器回调都会 `cancelAnimationFrame`
+- **碎碎念间隔被任务状态拖长**：whisper effect 的依赖曾是 `[cfg.display, wvReady, workStatus?.state]`，任务状态每变一次就 `clearInterval` 重排，实测 90 秒被拖成 12 分钟以上。改为组件顶部维护 `workStatusRef`，`busy()` 读 ref，依赖只剩 `[cfg.display, wvReady]`
+- **桌面端补上「语音包与素材」面板**：此前只有网页端有。桌面 helper 的 `voice.js` 新增 `assets` 段（检查素材 / 一键修复 + 状态行），`API_BASE = new URL('../..', OFFICIAL_BASE).href`；`openSettingsOverlay/openSettingsPanel` 白名单加 `'assets'`
+- **宿主 `/voice/health` 与 `/voice/repair` 加 CORS 头**：桌面 helper 页面是 `file://` 源，取同源数据会被浏览器拦；两个响应补 `access-control-allow-origin: *`
+- **网页右键菜单与桌面端对齐**：`webPhysicsBranch()`（「真实物理：开 / 关」，键 `columbina-physics-web-v1`，关掉时 `throwPower: 0 / restitution: 0 / ceilingBounce: false / groundFriction: 40 / petCollision: false`）插在「回到初始位置」之后；末尾分支顺序改为 `音量 → 夜间勿扰 → 省电模式 → 语音包与素材 → 设置面板 → 待机动作`；设置面板分区顺序统一为 碎碎念 / 语言 / 模型大小 / 2D live 形象 / 待机动作 / 语音包与素材 / 原声台词 / 天气；新增菜单项的日 / 英文案一并补齐
+- **天气播报文案统一**：温度带 `℃`，中 / 日 / 英各自成句（`今天小雨，21℃，17~24℃ · 广州` / `今日は…` / `Today …, 21℃ (17–24℃) · Guangzhou`）
+- **已知未尽事项**：素材路由仍不支持 `accept-ranges` / 206，`audio.duration` 依赖客户端兜底；根治（顺带让 webm 可 seek）留待后续版本评估
+
 ## 1.2.0 — 2026-10
 
 - **余额查询不再被 API Key 卡住**：默认模型挂在 API Key 版服务商（`deepseek-official`）而本机是账号登录时，宿主会先按 ref 取 `DEEPSEEK_API_KEY` → 直接 `credential-missing`（界面显示「缺少凭证 DEEPSEEK_API_KEY」）。现在缺凭证时自动退到账号余额（`deepseek-account`），账号那条失败信息（未登录 / 授权过期）比「缺少凭证」好懂；网页模式走同一个 `refreshBalance`，一并修好
