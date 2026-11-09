@@ -24,6 +24,14 @@
 
 > 英文简介：A 2D live desktop pet of Columbina for DeepSeek Harness — four sprite sets, 76 official voice lines in zh/ja/en with synced subtitles, weather reports, and real physics. 3D mode from upstream has been removed on purpose. See [NOTICE.md](NOTICE.md) for asset licensing.
 
+## 关于后续
+
+先把期待放在明面上：
+
+- **功能面基本到这儿了。** 后面不会再往里堆新功能，主要做两件事：跟住 DeepSeek Harness 的新版本（接口一变就修，兼容声明也会跟着更新），以及把现有的东西继续磨顺——性能、稳定性、交互上的小毛刺。
+- **有想要的功能，欢迎来说。** B 站私信「六硬币的好活」（uid 1947282109）；或者你自己动手，项目是 MIT 的，改完想合回来也欢迎（提 PR 就行，不熟流程也可以先把改动贴给我看）。
+- **遇到 bug，一定要来喊我修。** 这条优先级最高，别自己忍着，也别自己 hack。报的时候尽量带上：DSH 版本 + 插件版本（见下面「健康检查」的 `version` 一栏）、现象与复现步骤、F12 控制台或日志里带 `[dsh-pet]` 的行。
+
 ## 预览
 
 | 桌面模式 | 右键菜单 |

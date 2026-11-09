@@ -6,7 +6,7 @@
 - **CI**：`.github/workflows/ci.yml`，push / PR / 手动触发，Node 22 与 24 矩阵，跑 `npm run check`（`node --check` 两个 lib 文件）与 `npm test`；无第三方依赖，因此不需要 install
 - **兼容面**：`dsh.compatibility.dshReleases` 增 `0.2.2-rc.1: compatible`；12 个 `@deepseek-ai/*` peer 从 `^0.2.0-rc.1` 放宽到 `>=0.2.0-rc.1 <0.3.0`（实测 0.2.2-rc.1 下 6 个命名导入、7 个服务成员、`shell.overlay` 占位、`settings.section` 槽位都正常）
 - **`src/` 定性**：新增 `src/README.md`，写明发布产物是 `lib/`、没有构建步骤、`src/` 仅作参考且会漂移
-- **README**：安装段补「tarball 约 148 MB、首次安装需等待」；环境表补 0.2.2-rc.1 实测；新增「开发与测试」一节；`从 npm 安装` 示例改 1.2.2
+- **README**：安装段补「tarball 约 148 MB、首次安装需等待」；环境表补 0.2.2-rc.1 实测；新增「开发与测试」「关于后续」两节（后者写明：功能面冻结、只做兼容与优化、想法走 B 站私信、bug 优先修）；`从 npm 安装` 示例改 1.2.2
 - **仓库卫生**：`.gitignore` 加 `_tmp/`
 - 无运行时行为变化
 
