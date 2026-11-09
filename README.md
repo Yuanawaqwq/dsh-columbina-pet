@@ -38,6 +38,17 @@
 
 > 逐版本明细见 [CHANGELOG.md](./CHANGELOG.md)；可下载的包见 [Releases](https://github.com/Yuanawaqwq/dsh-columbina-pet/releases)。每个版本都会在这里留一段，说明**改了什么、要不要动设置**。
 
+### 1.2.2 · 2026-11-09
+
+> 这一版**不改宠物的动作、声音和脾气**，改的是「以后不容易坏」的部分：测试、CI、兼容声明、安装说明。**不需要动任何设置**，升级后同样请**完整退出 DSH 再打开**。
+
+- **测试进了仓库**：以前那 93 条断言躺在临时目录里，只有写的时候记得怎么跑。现在 5 个用例（碎碎念字幕 19 / 字幕跟音频 15 / 请求体编码 19 / Range 24 / 跨站写 16）挪到 `test/`，`npm test` 一条命令跑完，零依赖、不联网、自带假 DOM 与假时钟。
+- **每次提交自动跑**：新增 GitHub Actions，Node 22 与 24 各跑一遍语法检查与全部用例，坏了当场标红，不用再靠人记着。
+- **兼容声明跟上新版 DSH**：`dsh.compatibility` 补上 `0.2.2-rc.1`；`@deepseek-ai/*` 的 peer 依赖从 `^0.2.0-rc.1` 放宽到 `>=0.2.0-rc.1 <0.3.0`——0.2.x 里的小版本升级不会再被标成不兼容。
+- **安装时不容易误会**：README 安装段直接写明「tarball 约 148 MB，第一次装要等几分钟，别中途取消」，免得以为卡死。
+- **`src/` 讲清了定位**：新增 `src/README.md`——发布产物是 `lib/`、没有构建步骤；`src/` 是半同步的参考源码，会和 `lib/` 漂移，判断真实行为请看 `lib/`。
+- 素材与运行时行为都没动。
+
 ### 1.2.1 · 2026-10-31
 
 > 一版以「修碎碎念字幕」为主的补丁。**不需要动任何设置**，升级后请**完整退出 DSH 再打开**。
@@ -188,7 +199,7 @@
 ## 开发与测试
 
 - **发布产物是 `lib/`，没有构建步骤**：改行为直接改 `lib/index.js`（宿主半）或 `lib/client.js`（网页半）。
-- `src/` 是半同步的 TypeScript 参考，会和 `lib/` 漂移（碎碎念浮层、贴图修桥这些后加的只活在 `lib/` 里）。**判断真实行为请看 `lib/`**，详见 [`src/README.md`](src/README.md)。
+- `src/` 是半同步的 TypeScript 参考，会和 `lib/` 漂移（碎碎念浮层、网页端真实物理、`data-dsh-pet-subtitle` 宿主这些后加的只活在 `lib/` 里）。**判断真实行为请看 `lib/`**，详见 [`src/README.md`](src/README.md)。
 - 自检命令：
 
   ```bash
@@ -307,11 +318,11 @@ npm install dsh-columbina-pet
 
 **完整退出 DSH 再打开**（关窗口、刷新页面都不算重启）。
 
-### 从 npm 安装（1.2.0）
+### 从 npm 安装（1.2.2）
 
 ```bash
 cd ~/.dsh/profiles/<你的 profile>
-npm install dsh-columbina-pet@1.2.0
+npm install dsh-columbina-pet@1.2.2
 ```
 
 装完同样把 `dsh-columbina-pet` 加进 profile 的 `dsh.profile.bundles`，然后**完整退出 DSH 再打开**。

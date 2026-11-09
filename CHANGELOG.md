@@ -1,5 +1,15 @@
 # 更新日志
 
+## 1.2.2 — 2026-11
+
+- **测试搬进仓库**：`_tmp/test-*.cjs` → `test/`（5 个文件、93 条断言），新增 `test/run.mjs` 汇总执行（`spawnSync` 逐个跑、按退出码判定、打印 PASS/FAIL 与耗时）；`package.json` 增 `test` / `check` 脚本，`files` 增列 `test`，装好的包里也能自己跑一遍
+- **CI**：`.github/workflows/ci.yml`，push / PR / 手动触发，Node 22 与 24 矩阵，跑 `npm run check`（`node --check` 两个 lib 文件）与 `npm test`；无第三方依赖，因此不需要 install
+- **兼容面**：`dsh.compatibility.dshReleases` 增 `0.2.2-rc.1: compatible`；12 个 `@deepseek-ai/*` peer 从 `^0.2.0-rc.1` 放宽到 `>=0.2.0-rc.1 <0.3.0`（实测 0.2.2-rc.1 下 6 个命名导入、7 个服务成员、`shell.overlay` 占位、`settings.section` 槽位都正常）
+- **`src/` 定性**：新增 `src/README.md`，写明发布产物是 `lib/`、没有构建步骤、`src/` 仅作参考且会漂移
+- **README**：安装段补「tarball 约 148 MB、首次安装需等待」；环境表补 0.2.2-rc.1 实测；新增「开发与测试」一节；`从 npm 安装` 示例改 1.2.2
+- **仓库卫生**：`.gitignore` 加 `_tmp/`
+- 无运行时行为变化
+
 ## 1.2.1 — 2026-10
 
 - **碎碎念字幕比声音先消失（根因 + 兜底）**：宿主 `sendFile()` 只回 `200 + content-length`，不返回 `accept-ranges`，也不处理 `Range` 请求（实测带 `Range: bytes=0-100` 仍回 200 全量）。Chromium 对不可 seek 的 Ogg 常把 `audio.duration` 报成 `Infinity`，旧逻辑 `Math.round((audio.duration || 4) * 1000) + 1200` 于是得到 `Infinity`，`armWhisperSubtitleHide()` 判为非法 hold 退回 3600 ms——声音还在读，字幕先没了。新增 `trackWhisperSubtitleAudio(audio, text)`：在 `triggerWhisper()` 之后绑定真实音频，每次 `timeupdate` 重排收起时刻（duration 有限用 `left + 600`，Infinity/NaN 用 1500 ms 心跳顶着），`ended` 立即收，`paused` 后不再有心跳、1.5 秒内自然收；用 `textContent` 比对保证旧音频不会误伤新句
