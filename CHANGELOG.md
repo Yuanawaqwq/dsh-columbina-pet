@@ -10,6 +10,7 @@
 - **仓库卫生**：`.gitignore` 加 `_tmp/`
 - **排障文档**：README 新增「遇到问题怎么办」（四个自检数、11 类症状的处理、报 bug 清单），并订正配置目录说明（旧 `~/.dsh/dsh-pet/` 会一次性迁移到 `~/.dsh/columbina-pet/`）
 - **可检索性**：`package.json` 的 `description` 与 `keywords`、README 标题与首段补上《原神》/ genshin 字样（以前全文 0 次「原神」，按这个词搜不到）
+- **文档体检**：README 对齐当前实现（镜像变量名 `DSH_PET_ELECTRON_MIRROR`、语音包镜像示例版本 v1.1.4、右键菜单完整表、目录结构）并在开头补作者署名；纯文档改动
 - 无运行时行为变化
 
 ## 1.2.1 — 2026-10
