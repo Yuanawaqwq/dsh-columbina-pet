@@ -4,7 +4,7 @@
 
 # dsh-columbina-pet
 
-**哥伦比娅 2D live 桌宠 · DeepSeek Harness 插件**
+**《原神》哥伦比娅 2D live 桌宠 · DeepSeek Harness 插件**
 
 四套形象 · 76 句三语原声台词 · 天气播报 · 真实物理 · 表情包时刻
 
@@ -18,11 +18,11 @@
 
 ## 这是什么
 
-把愚人众第三席「少女」哥伦比娅放进 DeepSeek Harness 的桌面：她会浮在窗口最上层，被拖动时有真实的物理摆动，会按时间与场景轻声说话，会用官方原声念出台词，也会播报今天的天气。
+把《原神》里愚人众第三席「少女」哥伦比娅放进 DeepSeek Harness 的桌面：她会浮在窗口最上层，被拖动时有真实的物理摆动，会按时间与场景轻声说话，会用官方原声念出台词，也会播报今天的天气。
 
 本仓库是 [dsh-pet](https://github.com/PC2005-cloud/dsh-pet)（MIT）的**2D 专用分支**：保留并深化了 2D live 形象、语音台词、菜单与物理，**移除了尚未完善的上游 3D 形象切换**，补上了天气播报与开源所需的文档、占位与版权说明。
 
-> 英文简介：A 2D live desktop pet of Columbina for DeepSeek Harness — four sprite sets, 76 official voice lines in zh/ja/en with synced subtitles, weather reports, and real physics. 3D mode from upstream has been removed on purpose. See [NOTICE.md](NOTICE.md) for asset licensing.
+> 英文简介：A 2D live desktop pet of Columbina (Genshin Impact) for DeepSeek Harness — four sprite sets, 76 official voice lines in zh/ja/en with synced subtitles, weather reports, and real physics. 3D mode from upstream has been removed on purpose. See [NOTICE.md](NOTICE.md) for asset licensing.
 
 ## 关于后续
 
