@@ -57,7 +57,9 @@
   ],
   "scripts": {
     "ensure:electron": "node scripts/ensure-electron.mjs",
-    "ensure:voice": "node scripts/ensure-voice.mjs"
+    "ensure:voice": "node scripts/ensure-voice.mjs",
+    "test": "node test/run.mjs",
+    "check": "node --check lib/index.js && node --check lib/client.js"
   },
   "voicePack": {
     "url": "https://github.com/Yuanawaqwq/dsh-columbina-pet/releases/download/v1.1.4/dsh-columbina-pet-voice-1.1.4.tar.gz",
@@ -85,7 +87,8 @@
         "0.2.0-rc.1": "compatible",
         "0.2.0-rc.2": "compatible",
         "0.2.1-rc.2": "compatible",
-        "0.2.1-rc.3": "compatible"
+        "0.2.1-rc.3": "compatible",
+        "0.2.2-rc.1": "compatible"
       }
     },
     "client": {
@@ -97,15 +100,15 @@
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.4",
-    "@deepseek-ai/dsh-agent-default-model": "^0.2.0-rc.1",
-    "@deepseek-ai/dsh-client-connection": "^0.2.0-rc.1",
-    "@deepseek-ai/dsh-client-ui-primitives": "^0.2.0-rc.1",
-    "@deepseek-ai/dsh-client-ui-slots": "^0.2.0-rc.1",
-    "@deepseek-ai/dsh-commands": "^0.2.0-rc.1",
-    "@deepseek-ai/dsh-credentials": "^0.2.0-rc.1",
-    "@deepseek-ai/dsh-home-paths": "^0.2.0-rc.1",
-    "@deepseek-ai/dsh-host-webserver": "^0.2.0-rc.1",
-    "@deepseek-ai/dsh-llm": "^0.2.0-rc.1",
+    "@deepseek-ai/dsh-agent-default-model": ">=0.2.0-rc.1 <0.3.0",
+    "@deepseek-ai/dsh-client-connection": ">=0.2.0-rc.1 <0.3.0",
+    "@deepseek-ai/dsh-client-ui-primitives": ">=0.2.0-rc.1 <0.3.0",
+    "@deepseek-ai/dsh-client-ui-slots": ">=0.2.0-rc.1 <0.3.0",
+    "@deepseek-ai/dsh-commands": ">=0.2.0-rc.1 <0.3.0",
+    "@deepseek-ai/dsh-credentials": ">=0.2.0-rc.1 <0.3.0",
+    "@deepseek-ai/dsh-home-paths": ">=0.2.0-rc.1 <0.3.0",
+    "@deepseek-ai/dsh-host-webserver": ">=0.2.0-rc.1 <0.3.0",
+    "@deepseek-ai/dsh-llm": ">=0.2.0-rc.1 <0.3.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0"
   }

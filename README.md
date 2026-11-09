@@ -180,10 +180,24 @@
 
 | 项 | 要求 |
 | --- | --- |
-| DSH | 0.2.x（已在 0.2.1-rc.2 桌面版长期使用） |
+| DSH | 0.2.x（0.2.1-rc.2 / 0.2.2-rc.1 桌面版实测可用） |
 | Node.js | ≥ 22.12 |
 | 系统 | Windows / macOS / Linux |
 | Electron | 43.3.0（首次运行自动下载，或手动 `node scripts/ensure-electron.mjs`） |
+
+## 开发与测试
+
+- **发布产物是 `lib/`，没有构建步骤**：改行为直接改 `lib/index.js`（宿主半）或 `lib/client.js`（网页半）。
+- `src/` 是半同步的 TypeScript 参考，会和 `lib/` 漂移（碎碎念浮层、贴图修桥这些后加的只活在 `lib/` 里）。**判断真实行为请看 `lib/`**，详见 [`src/README.md`](src/README.md)。
+- 自检命令：
+
+  ```bash
+  npm run check   # node --check lib/index.js lib/client.js
+  npm test        # test/ 下全部用例：零依赖、纯内置模块、不联网
+  ```
+
+- 用例都是自己搭的假 DOM / 假时钟 / 假音频（碎碎念 19、字幕跟音频 15、请求体编码 19、Range 24、跨站写 16，共 93 项断言），CI 在 [`.github/workflows/ci.yml`](.github/workflows/ci.yml) 里用 Node 22 与 24 各跑一遍。
+- 发版前另跑 `node scripts/check-voice-asset.mjs`：语音包是外置资产，提前确认线上还在。
 
 ## 包体积：为什么这么大、怎么变小
 
@@ -244,7 +258,10 @@ FFMPEG=/path/to/ffmpeg node scripts/shrink-webm.mjs --crf 30 --backup D:/backup/
 
 ## 安装
 
-> ℹ️ **可以与上游 `dsh-pet` 并存**（1.0.4 起）：本插件的路由前缀、bridge scheme、用户目录、会话身份都已迁到 `dsh-columbina-pet*` 命名空间，不再和上游抢 `/dsh-pet-7340`。为兼容旧书签仍会尝试注册旧前缀，旧前缀被上游占用时静默跳过。
+> ℹ️ **可以与上游 `dsh-pet` 并存**
+
+> 📦 **第一次安装会等一会儿**：包里有四套 2D live 形象的动作视频，tarball 约 148 MB（解开约 212 MB）。从 GitHub 或 npm 拉取慢几分钟是正常的，中途别取消；装完还要**完整退出 DSH 再打开**，桌宠才会换上新代码。
+（1.0.4 起）：本插件的路由前缀、bridge scheme、用户目录、会话身份都已迁到 `dsh-columbina-pet*` 命名空间，不再和上游抢 `/dsh-pet-7340`。为兼容旧书签仍会尝试注册旧前缀，旧前缀被上游占用时静默跳过。
 
 ### 通过 DSH 插件管理安装（推荐）
 

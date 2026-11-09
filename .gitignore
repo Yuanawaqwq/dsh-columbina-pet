@@ -19,6 +19,9 @@ desktop.ini
 *.swp
 *~
 
+# 本地草稿/探针（不进仓库）
+_tmp/
+
 # 本地打包产物
 dsh-columbina-pet-*.tar.gz
 /_backup_*
