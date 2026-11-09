@@ -55,6 +55,7 @@
 - **兼容声明跟上新版 DSH**：`dsh.compatibility` 补上 `0.2.2-rc.1`；`@deepseek-ai/*` 的 peer 依赖从 `^0.2.0-rc.1` 放宽到 `>=0.2.0-rc.1 <0.3.0`——0.2.x 里的小版本升级不会再被标成不兼容。
 - **安装时不容易误会**：README 安装段直接写明「tarball 约 148 MB，第一次装要等几分钟，别中途取消」，免得以为卡死。
 - **`src/` 讲清了定位**：新增 `src/README.md`——发布产物是 `lib/`、没有构建步骤；`src/` 是半同步的参考源码，会和 `lib/` 漂移，判断真实行为请看 `lib/`。
+- **遇到问题能自己查**：README 新增「遇到问题怎么办」——版本/代码/语音包/Helper 四个数怎么对、每个症状先看哪一行、怎么修，附报 bug 要带的信息。顺手订正了配置路径（实际目录是 `~/.dsh/columbina-pet/`，旧 `dsh-pet` 会自动迁移一次）。
 - 素材与运行时行为都没动。
 
 ### 1.2.1 · 2026-10-31
@@ -418,6 +419,98 @@ node node_modules/dsh-columbina-pet/scripts/ensure-electron.mjs
 
 下载好后桌面会出现哥伦比娅；右键她可以打开全部设置。
 
+## 遇到问题怎么办
+
+> 九成问题用两条命令就能定位：`curl …/healthz`（宿主自检）与浏览器 F12 里搜 `[dsh-pet]`（前端日志）。下面按「症状 → 先看什么 → 怎么办」排，都不需要重装。
+
+### 第 0 步：四个数对一遍
+
+| 看什么 | 在哪 | 正常值 |
+| --- | --- | --- |
+| 版本一致 | `/healthz` 的 `version` 与 `activatedVersion` | 两个相同；不同 = 换了包没重启 |
+| 代码一致 | `buildSha256` 与 `activatedBuildSha256` | 相同；不同且 `needsRestart: true` → 完整退出 DSH 重开 |
+| 语音包 | `/voice/health` 的 `voice.ready` / `voice.zh` | `true` / `76` |
+| 桌面 Helper | `/healthz` 的 `helperRunning` | 桌面模式应为 `true`；网页模式可以是 `false` |
+
+端口每次启动 DSH 都会变，写法见上一节「健康检查」。
+
+### 装完没生效 / 还是旧行为
+
+- `needsRestart: true` → **完整退出** DSH（关窗口不算，要从托盘/菜单退出进程）再打开。刷新页面只换前端，不换宿主。
+- 插件管理里 `dsh-columbina-pet` 是否还在启用状态（被禁用时宿主照常启动，只是没有宠物）。
+- 从市场装的？市场条目指向 `releases/latest`，装到的就是最新版；要确认拿到的是哪一版，看 `/healthz` 的 `version`。
+
+### 第一次安装很慢、像卡住了
+
+- tarball 约 148 MB（解开约 212 MB），慢几分钟是正常的，**别中途取消**——取消会留下半个 `node_modules`。
+- 磁盘至少留 400 MB；代理/公司网可能拦 npm registry。
+- 真卡死：删掉 `node_modules/dsh-columbina-pet` 再装一次即可（其它依赖不用动）。
+
+### 桌宠没出现 / 看不见她
+
+- **网页模式**：先刷新页面（Ctrl+R），再看控制台有没有 `[dsh-pet]` 的挂载日志。
+- **桌面模式**：她是**独立的透明窗口**，可能被拖到屏幕边缘之外、落在副屏、或者被全屏应用压住。看 `helperRunning`，再看任务管理器里有没有 `electron.exe`。
+- 全屏游戏 / 演示模式下系统会压住置顶窗口，退出全屏再试。
+- 改过多显示器或分辨率后位置可能越界：把 `main-config.jsonc` 里 `pets[]` 的 `position` 删掉，回默认位置。
+
+### 没声音 / 没字幕 / 字幕比声音先没
+
+- 先看菜单：音量、静音、夜间勿扰、碎碎念是否被关掉。
+- 控制台 `[dsh-pet] 字幕丢弃 seq=…` 表示那一句被更晚的一句顶掉了（正常行为，不是 bug）。
+- `[dsh-pet] 字幕跟音频 duration=未知` 是**正常兜底**：音频不支持分段取字节时，字幕改按播放进度续命（1.2.1 起）。
+- 浏览器策略：页面还没被点过之前，自动播放会被拦。**随便点一下页面**，桌宠会补播一句（控制台有「补播」记录）。
+- 语音包缺失：`/voice/health` 里 `voice.zh` 为 0 → 右键菜单「语音包与素材 → 修复」，或 `curl -X POST …/voice/repair`。
+- 字幕在**画面顶部**是设计如此（避免压住脚边动作），不是位置错了。
+
+### 气泡出现方块 / 乱码
+
+- 整句都是 `□` / `?`：**文本本身是坏的字节**（含 `\ufffd`）。1.2.1 起宿主会拒绝写入这类文本（响应 `bad-encoding`）；已经坏掉的旧气泡会被下一条覆盖。自查：`curl …/state` 看 `pets.main.say.data.text` 里有没有 `\ufffd`。
+- 自己用脚本打 `/broadcast` 时，Windows 控制台会把中文先转成 GBK → 用 `curl --data-binary @body.json`（文件按 UTF-8 保存），或先 `chcp 65001`。
+- 个别生僻字显示成方块：字体没覆盖到那个字形，属正常回落，不影响其它字。
+- 自建字体路由 `…/font/上首软糖体.ttf` 被安全软件拦时，会回落到系统字体，文字仍可读。
+
+### 右键菜单打不开 / 设置面板白屏
+
+- 网页模式：F12 看有没有 `Uncaught` 报错；先确认版本 ≥ 1.2.1（网页端菜单对齐与浮层修正在 1.2.1）。
+- 桌面模式：右键要落在宠物本体上，透明区域是穿透的。
+- 面板白屏多半是素材路由 404（被安全软件拦）→ Network 里看 `/dsh-columbina-pet-7340/…` 的响应码。
+
+### 拖不动 / 一拖就飞
+
+- 菜单里有「真实物理：开 / 关」：关掉就不抛飞、不弹天花板、落地即停。
+- 拖拽要按住本体，透明区域不响应。
+
+### 语音包下载 / 校验失败
+
+- 先看 `/voice/health` 的 `lastError`，再看 `~/.dsh/columbina-pet/voice-pack.json` 的 marker（`version` 应为当前版本）。
+- 手动补：`node node_modules/dsh-columbina-pet/scripts/ensure-voice.mjs`；可用 `DSH_VOICE_PACK_URL` 指定镜像。
+- sha256 不符通常是代理改写了内容或下了一半 → 删掉 `~/.dsh/columbina-pet/voice/` 重新下载。
+- 语音包是外置的，**升级插件不会重新下载**。
+
+### 素材自检报红
+
+- 「语音包与素材 → 一键数」只读本机文件、不联网；只有点「修复」才会下载（约 31 MB，逐个校验 sha256）。
+- 缺的是 `webm` 动作或表情包时，它们随包发布：从用户目录删掉同名覆盖文件即可回落到包内版本，或重装一次包。
+
+### 想彻底重来
+
+1. 备份 `~/.dsh/columbina-pet/`（配置、语音、激活记录都在里面）。
+2. 删掉它 → 下次启动自动重建，形象与语音会重新下载。
+3. 只想恢复默认设置：删 `main-config.jsonc` 与 `pet/` 目录，保留 `voice/` 就不用重下语音。
+
+### 报 bug 请带上这些
+
+| 项 | 怎么拿 |
+| --- | --- |
+| 插件版本 | `/healthz` 的 `version` |
+| DSH 版本 | DSH 的「关于」页，或窗口标题栏版本号 |
+| healthz 全文 | `curl …/healthz` |
+| 前端日志 | F12 Console 里所有 `[dsh-pet]` 开头的行 |
+| 复现步骤 | 做了什么 → 期望什么 → 实际什么 |
+| 环境 | Windows 版本、显示器数量与缩放、网页模式还是桌面模式 |
+
+嫌麻烦就直接私信 B 站「六硬币的好活」，把上面几项贴进去；也可以在仓库开 issue。
+
 ## 右键菜单
 
 | 菜单 | 作用 |
@@ -435,15 +528,17 @@ node node_modules/dsh-columbina-pet/scripts/ensure-electron.mjs
 配置分三层，后面的覆盖前面的：
 
 1. **包内默认**：`assets/config.jsonc`
-2. **用户覆盖**：`~/.dsh/dsh-pet/main-config.jsonc`（只写要改的键即可，`pets` 按 `id` 合并）
-3. **单只宠物覆盖**：`~/.dsh/dsh-pet/pet/<id>.jsonc`
+2. **用户覆盖**：`~/.dsh/columbina-pet/main-config.jsonc`（只写要改的键即可，`pets` 按 `id` 合并）
+
+> 旧版本的目录叫 `~/.dsh/dsh-pet/`，启动时会**自动迁移**到 `~/.dsh/columbina-pet/`，一次性、不删原目录。看到两个目录并存是正常的。
+3. **单只宠物覆盖**：`~/.dsh/columbina-pet/pet/<id>.jsonc`
 
 素材同样支持用户覆盖（优先于包内）：
 
 | 素材 | 用户目录 | 包内目录 |
 | --- | --- | --- |
-| live 形象 | `~/.dsh/dsh-pet/main-animation/webm/` | `assets/webm/` |
-| 表情包 | `~/.dsh/dsh-pet/memes/` | `assets/memes/` |
+| live 形象 | `~/.dsh/columbina-pet/main-animation/webm/` | `assets/webm/` |
+| 表情包 | `~/.dsh/columbina-pet/memes/` | `assets/memes/` |
 | 外置素材根（1.0.2+，优先级最高） | `~/.dsh/columbina-pet/assets/` | — |
 
 常用字段（`assets/config.jsonc` 内有完整注释与默认值）：
