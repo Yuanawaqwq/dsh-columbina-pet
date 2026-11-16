@@ -684,17 +684,47 @@ async function hostRequest(method, url, body) {
   return { status: resp.status, body: await resp.text() };
 }
 
-const isDesktopDisplay = (display) => display === 'desktop' || display === 'both';
-
-/** 翻转「桌面位」：both↔web、desktop↔none——浏览器位保持不动，因此不制造新的单向门 */
-const toggleDisplay = (display) =>
-  display === 'both' ? 'web' : display === 'web' ? 'both' : display === 'desktop' ? 'none' : 'desktop';
+/**
+ * 显示位置四项（文案与 lib/client.js 的 displayMenuBranch 一致）。
+ * 1.2.3 起托盘不再用「一个复选框翻转」——旧实现 desktop 点一下直接跳 none（屏幕上连托盘图标
+ * 都会消失，成了单向门）。现在四项平铺、当前项打勾，任何一项都是显式选择。
+ */
+const DISPLAY_CHOICE_VALUES = ['web', 'desktop', 'both', 'none'];
+/** 托盘文案三语：helper 主进程读不到渲染端的 menuLang，直接读共享的 prefs.json。 */
+const TRAY_I18N = {
+  zh: { tooltip: 'dsh-pet 桌面宠物', labels: ['仅网页', '仅桌面', '两者', '都不（隐藏）'] },
+  en: { tooltip: 'dsh-pet desktop pet', labels: ['Web only', 'Desktop only', 'Both', 'Hidden'] },
+  ja: { tooltip: 'dsh-pet デスクトップペット', labels: ['Webのみ', 'デスクトップのみ', '両方', '非表示'] },
+};
+const TRAY_LANG_FALLBACK = 'zh';
+const trayPrefsFile = () => path.join(app.getPath('home'), '.dsh', 'columbina-pet', 'voice', 'prefs.json');
+/** 读 prefs.json 的 menuLang；读不到（首次启动/文件损坏）一律回落中文。 */
+const trayMenuLang = () => {
+  try {
+    const prefs = JSON.parse(readFileSync(trayPrefsFile(), 'utf8'));
+    const lang = typeof prefs.menuLang === 'string' ? prefs.menuLang.trim() : '';
+    return Object.prototype.hasOwnProperty.call(TRAY_I18N, lang) ? lang : TRAY_LANG_FALLBACK;
+  } catch {
+    return TRAY_LANG_FALLBACK;
+  }
+};
+const displayChoices = (lang) => {
+  const table = TRAY_I18N[lang] || TRAY_I18N[TRAY_LANG_FALLBACK];
+  return DISPLAY_CHOICE_VALUES.map((value, index) => ({ value, label: table.labels[index] }));
+};
 
 let tray = null;
+/** 上一次建菜单用的语言与宠物快照：语言变了要原地重建，不必等下一次 syncTray。 */
+let trayLang = null;
+let trayPets = [];
 
 /** 写回某只宠物的 display：宿主写完配置会重启本进程，响应可能永远不回（同 sprite.js 的 setPetDisplay） */
 function traySetPetDisplay(id, display) {
-  hostRequest('POST', PET_ROUTE + '/pet-display', JSON.stringify({ id, display })).catch((e) => {
+  hostRequest(
+    'POST',
+    PET_ROUTE + '/pet-display',
+    JSON.stringify({ id, display, source: 'tray' }),
+  ).catch((e) => {
     console.error('[dsh-pet-desktop-helper] tray pet-display failed:', String(e && e.message ? e.message : e));
   });
 }
@@ -717,6 +747,52 @@ function trayIcon() {
  * 建托盘：列出**配置里全部**宠物（含 display 为 web/none 的——它们当前不在桌面上、勾是空的，
  * 点一下就能送回来，这是托盘相对宠物右键菜单的增量）。勾 = 当前 display 含 desktop/both。
  */
+/** 托盘菜单没法远程打开：每次建完落一份快照，出问题时这里是唯一取证点。 */
+async function writeTraySnapshot() {
+  try {
+    const trayStateFile = path.join(app.getPath('userData'), 'tray-state.json');
+    const snapshot = { at: new Date().toISOString(), menuLang: trayLang, pets: trayPets, choices: displayChoices(trayLang) };
+    await fsPromises.mkdir(path.dirname(trayStateFile), { recursive: true });
+    await fsPromises.writeFile(trayStateFile, JSON.stringify(snapshot, null, 2), 'utf8');
+  } catch (e) {
+    console.error('[dsh-pet-desktop-helper] tray snapshot failed:', String(e && e.message ? e.message : e));
+  }
+}
+
+/** 按当前 trayPets / trayLang 重建托盘菜单（建、换语言都走这里）。 */
+function applyTrayMenu() {
+  if (!tray) return;
+  const table = TRAY_I18N[trayLang] || TRAY_I18N[TRAY_LANG_FALLBACK];
+  const choices = displayChoices(trayLang);
+  tray.setToolTip(table.tooltip);
+  tray.setContextMenu(
+    Menu.buildFromTemplate(
+      trayPets.map((pet) => ({
+        label: pet.name || pet.id,
+        submenu: choices.map((choice) => ({
+          label: choice.label,
+          type: 'radio',
+          checked: pet.display === choice.value,
+          click: () => traySetPetDisplay(pet.id, choice.value),
+        })),
+      })),
+    ),
+  );
+  void writeTraySnapshot();
+}
+
+/** 菜单语言是在渲染进程里改的，主进程没有事件可听——4s 看一次 prefs.json，变了就重建。 */
+function watchTrayLang() {
+  setInterval(() => {
+    if (!tray) return;
+    const lang = trayMenuLang();
+    if (lang === trayLang) return;
+    trayLang = lang;
+    applyTrayMenu();
+    console.error('[dsh-pet-desktop-helper] tray language -> ' + lang);
+  }, 4000).unref?.();
+}
+
 async function startTray() {
   try {
     // 请求行要携带回调 URL，而端口在 startBridgeCallback 的 listen 回调里才有值（最多等 2s）
@@ -739,18 +815,10 @@ async function startTray() {
       }))
       .filter((pet) => pet.id);
     if (!pets.length) return; // 配置里没有任何宠物：没有可切换的对象，不建托盘
-    tray = new Tray(trayIcon());
-    tray.setToolTip('dsh-pet 桌面宠物');
-    tray.setContextMenu(
-      Menu.buildFromTemplate(
-        pets.map((pet) => ({
-          label: pet.name || pet.id,
-          type: 'checkbox',
-          checked: isDesktopDisplay(pet.display),
-          click: () => traySetPetDisplay(pet.id, toggleDisplay(pet.display)),
-        })),
-      ),
-    );
+    trayPets = pets;
+    trayLang = trayMenuLang();
+    if (!tray) tray = new Tray(trayIcon());
+    applyTrayMenu();
     // Windows 上 setContextMenu 只接管右键，左键默认什么都不做（macOS 相反：左键即弹菜单）
     if (TRAY_PLATFORM.leftClickPopsMenu) tray.on('click', () => tray.popUpContextMenu());
   } catch (e) {
@@ -796,6 +864,7 @@ app.whenReady().then(() => {
 
   // 托盘：不 await（建窗与建托盘互不依赖），内部自己等 bridge 回调服务就绪
   void startTray();
+  watchTrayLang();
 
   createPetWindows();
 

@@ -1,6 +1,6 @@
 {
   "name": "dsh-columbina-pet",
-  "version": "1.2.2",
+  "version": "1.2.3",
   "description": "《原神》哥伦比娅 2D live 桌宠 —— 四套形象、76 句三语原声台词、天气播报、真实物理。DeepSeek Harness 插件（基于 dsh-pet 0.3.8，已移除 3D 形象切换）。",
   "icon": "assets/logo.png",
   "keywords": [
@@ -56,6 +56,8 @@
     "scripts",
     "cordis.patch.yml",
     "README.md",
+    "README.en.md",
+    "README.ja.md",
     "CHANGELOG.md",
     "NOTICE.md",
     "LICENSE"
@@ -93,7 +95,8 @@
         "0.2.0-rc.2": "compatible",
         "0.2.1-rc.2": "compatible",
         "0.2.1-rc.3": "compatible",
-        "0.2.2-rc.1": "compatible"
+        "0.2.2-rc.1": "compatible",
+   "0.2.2-rc.3": "compatible"
       }
     },
     "client": {

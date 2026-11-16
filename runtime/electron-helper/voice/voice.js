@@ -79,6 +79,8 @@
   var voiceLang = 'zh';
   var subLang = 'zh';
   var menuLang = 'zh';
+  /** 设置面板自己的语言；空串 = 跟随「菜单」语言。 */
+  var panelLang = '';
   var SCALE_MIN = 0.5;
   var SCALE_MAX = 3;
   var SCALE_CHOICES = [0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3];
@@ -88,11 +90,30 @@
     return (v === 'zh' || v === 'ja' || v === 'en') ? v : (fallback || 'zh');
   }
 
+  /** 面板语言允许空串（跟随菜单）。 */
+  function normPanelLang(v, fallback) {
+    if (v === '') return '';
+    return (v === 'zh' || v === 'ja' || v === 'en') ? v : (fallback === undefined ? '' : fallback);
+  }
+
+  function panelLangNow() { return panelLang || menuLang; }
+  function panelTr(text) { return trText(text, panelLangNow()); }
+
   function clampScale(v) {
     var n = Number(v);
     if (!isFinite(n)) return 1;
     return Math.round(Math.min(SCALE_MAX, Math.max(SCALE_MIN, n)) * 100) / 100;
   }
+
+  /** 面板语言的 {name} 占位模板（数字 / 时间不进字典）。 */
+  function panelFmtArgs(template, args) {
+    var out = String(panelTr(template));
+    Object.keys(args).forEach(function (k) {
+      out = out.split('{' + k + '}').join(String(args[k]));
+    });
+    return out;
+  }
+
 
   // ---------- 索引视图 ----------
   var byId = new Map();
@@ -183,6 +204,12 @@
       if (!lineByLabel.has(lk)) lineByLabel.set(lk, []);
       lineByLabel.get(lk).push(line);
     }
+  }
+
+  /** 截断显示：菜单项太长会撑宽原生菜单。 */
+  function truncateText(text, max) {
+    var value = String(text == null ? '' : text);
+    return value.length > max ? value.slice(0, max) + '…' : value;
   }
 
   function lineTextOf(line, lang) {
@@ -725,6 +752,24 @@
     }
   }
 
+  /**
+   * 把语言类偏好推给宿主：托盘的 menuLang、网页设置面板读的都是宿主 prefs.json，
+   * 桌宠右键菜单改完语言只写 localStorage 的话，托盘要等到网页端再改一次才跟上。
+   * S.postAction 自带序列化且从不抛异常；本函数也只在有 BASE / PetShared 时才动。
+   */
+  function pushPrefsToHost() {
+    try {
+      var shared = window.PetShared;
+      if (typeof BASE !== 'string' || !shared || typeof shared.postAction !== 'function') return;
+      void shared.postAction(BASE + '/voice-prefs', {
+        menuLang: menuLang,
+        panelLang: panelLang,
+        voiceLang: voiceLang,
+        subLang: subLang,
+      });
+    } catch (e) { /* 推送失败不影响本地偏好 */ }
+  }
+
   function writeLocalPrefs() {
     localAt = new Date().toISOString();
     try {
@@ -735,6 +780,7 @@
           voiceLang: voiceLang,
           subLang: subLang,
           menuLang: menuLang,
+          panelLang: panelLang,
           scale: scalePref,
           lines: allowedLines === null ? null : Object.keys(allowedLines).filter(function (k) {
             return allowedLines[k] === true;
@@ -743,6 +789,7 @@
         }));
       }
     } catch (e) { /* ignore */ }
+    pushPrefsToHost();
   }
 
   function readVolumePrefs() {
@@ -803,6 +850,30 @@
     var h = Math.floor(minutes / 60) % 24;
     var m = minutes % 60;
     return (h < 10 ? '0' : '') + h + ':' + (m < 10 ? '0' : '') + m;
+  }
+
+  /** 0–100 的整数档位（面板滑杆用；静音时显示 0） */
+  function volumePct() {
+    return Math.round((mutedPref ? 0 : volumePref) * 100);
+  }
+
+  function volumeLabel() {
+    return mutedPref ? panelTr('静音') : Math.round(volumePref * 100) + '%';
+  }
+
+  function quietLabel() {
+    if (!quietPref.on) return panelTr('关');
+    return quietText() + (quietPref.start > quietPref.end ? panelTr('（跨午夜）') : '');
+  }
+
+  /** "07:30" → 450（分钟）；格式不对返回 null，避免把脏值写进偏好 */
+  function parseHhmm(text) {
+    var m = /^(\d{1,2}):(\d{2})$/.exec(String(text || '').trim());
+    if (!m) return null;
+    var h = Number(m[1]);
+    var mi = Number(m[2]);
+    if (!(h >= 0 && h < 24) || !(mi >= 0 && mi < 60)) return null;
+    return h * 60 + mi;
   }
 
   /** 现在是不是落在勿扰时段里（支持跨午夜，比如 23:00–08:00）。 */
@@ -870,12 +941,12 @@
   }
   function idleModeText() {
     var skin = currentSkin();
-    if (idlePref.mode === 'all') return '全部动作 · ' + skinPool(skin).length + ' 段';
+    if (idlePref.mode === 'all') return panelTr('全部动作') + ' · ' + skinPool(skin).length + ' ' + panelTr('段');
     if (idlePref.mode === 'custom') {
       var n = idlePicksOf(skin).length;
-      return n ? ('自己选 · ' + n + ' 段') : '自己选（还没勾，暂用精选）';
+      return n ? (panelTr('自己选') + ' · ' + n + ' ' + panelTr('段')) : panelTr('自己选（还没勾，暂用精选）');
     }
-    return '精选 · ' + ((skin && skin.tree && skin.tree.idle) ? skin.tree.idle.length : 0) + ' 段';
+    return panelTr('精选') + ' · ' + ((skin && skin.tree && skin.tree.idle) ? skin.tree.idle.length : 0) + ' ' + panelTr('段');
   }
   function stripAnimPrefix(name, skin) {
     var p = (skin && (skin.poolPrefix || skin.prefix)) || '';
@@ -964,6 +1035,7 @@
       voiceLang = normLang(prefs.voiceLang, voiceLang);
       subLang = normLang(prefs.subLang, subLang);
       menuLang = normLang(prefs.menuLang, menuLang);
+      panelLang = normPanelLang(prefs.panelLang, panelLang);
       if (typeof prefs.scale === 'number') scalePref = clampScale(prefs.scale);
       if (Array.isArray(prefs.lines)) {
         allowedLines = {};
@@ -991,6 +1063,7 @@
     if (remote.voiceLang !== undefined) voiceLang = normLang(remote.voiceLang, voiceLang);
     if (remote.subLang !== undefined) subLang = normLang(remote.subLang, subLang);
     if (remote.menuLang !== undefined) menuLang = normLang(remote.menuLang, menuLang);
+    if (remote.panelLang !== undefined) panelLang = normPanelLang(remote.panelLang, panelLang);
     if (typeof remote.scale === 'number') {
       var nextScale = clampScale(remote.scale);
       if (Math.abs(nextScale - scalePref) > 0.001) {
@@ -1432,24 +1505,39 @@
   var MENU_I18N = {
     ja: {
       '打开网站': 'サイトを開く', '打开软件': 'アプリを開く', '查看余额': '残高を見る',
-      '对话': '会話', '回到初始位置': '元の位置へ', '重载配置': '設定を再読込',
-      '真实物理：开': '物理挙動：オン', '真实物理：关': '物理挙動：オフ', '点一下切换': 'クリックで切替',      '设置面板': '設定パネル', '检查、勾选、修复都在这里': 'チェック・選択・修復はここで',
-      '显示位置': '表示位置', '仅网页': 'ウェブのみ', '仅桌面': 'デスクトップのみ', '两者': '両方', '都不': 'どちらも表示しない',
-      '动作': 'アクション', '待机': '待機', '转向': '振り向き', '拖拽': 'ドラッグ', '点击回应': 'クリック反応', '移动': '移動',
+      '对话': '会話', '回到初始位置': '元の位置に戻す', '重载配置': '設定を再読み込み',
+      '真实物理：开': '物理挙動：オン', '真实物理：关': '物理挙動：オフ', '点一下切换': 'クリックで切替',      '设置面板': '設定パネル', '检查、勾选、修复都在这里': 'チェック・選択・修復はここから',
+      '显示位置': '表示先', '仅网页': 'ウェブのみ', '仅桌面': 'デスクトップのみ', '两者': '両方', '都不': 'どちらも表示しない',
+      '动作': 'モーション', '待机': '待機', '转向': '振り向き', '拖拽': 'ドラッグ', '点击回应': 'クリック反応', '移动': '移動',
       '亲昵': 'なかよし', '俏皮': 'おちゃめ', '小动作': 'しぐさ', '心情': '気分',
-      '余额档位': '残高レベル', '碎碎念表情': 'ひとりごと表情', '工作状态': '作業状態',
-      '切换间隔': '切替間隔', '2D live 形象': '2D live モデル', '原声台词': '原語セリフ',
-      '碎碎念设置': 'ひとりごと設定', '语言': '言語', '模型大小': 'モデルサイズ',
+      '余额档位': '残高レベル', '碎碎念表情': 'つぶやきスタンプ', '工作状态': '作業状態',
+      '切换间隔': '切替間隔', '2D live 形象': '2D Live モデル', '原声台词': 'オリジナルボイス',
+      '碎碎念设置': 'つぶやき設定', '语言': '言語', '模型大小': 'モデルサイズ',
       '配音': '音声', '字幕': '字幕', '菜单': 'メニュー',
       '中文': '中国語', '日本語': '日本語', 'English': 'English',
+      '开': 'オン', '关': 'オフ',
+      "这段时间不主动开口": "この時間は自分から話さない",
+      "现在会说话": "いまは話します",
+      '开启省电': '省電力モードをオン', '关闭省电': '省電力モードをオフ',
+      "动画照常播": "アニメは通常再生",
+      "定格待机动图，省 CPU / 电量": "待機モーションを止めて節電",
+      "闲着 30 秒后暂停待机动图": "30 秒操作がないと停止",
+      "一直播": "常に再生",
+      "中性待机，不会随机哭/坐牢": "おだやかな待機のみ（ランダムなし）",
+      "在下面逐个勾": "下でひとつずつチェック",
+      "共 {n} 段，剧情动作也会出现": "全 {n} 本（ストーリー動作も含む）",
+      "已选 {n} 段": "{n} 本を選択中",
+      '官方表情包': '公式スタンプ', '去眼罩': 'アイマスクなし',
+      '带眼罩睁眼': 'アイマスク（開眼）', '带眼罩闭眼': 'アイマスク（閉眼）',
       '当前': '現在', '更多': 'その他', '表情': 'スタンプ',
       '打开设置': '設定を開く', '在 DSH 设置里改': 'DSH 設定で変更', 'Ctrl+左键': 'Ctrl+左クリック',
-      '闲暇一下 · 娅娅的表情包时刻': 'ひととき · コロンビーナのスタンプ',
-      '发一张 Q 版表情': 'Q 版スタンプを一枚',
-      '天气': '天気', '今天的天气': '今日の天気', '重新定位': '位置を更新',
+      "闲暇一下 · 娅娅的表情包时刻": "ひととき · コロンビーナのスタンプ",
+      "发一张 Q 版表情": "Q 版スタンプを一枚",
+      '天气': '天気', '今天的天气': '今日の天気', '重新定位': '位置情報を更新',
       '音量': '音量', '静音：开': 'ミュート：オン', '静音：关': 'ミュート：オフ',
-      '夜间勿扰': 'おやすみモード', '开启勿扰': 'オンにする', '关闭勿扰': 'オフにする',
-      '播报一次': 'いま聞いてみる', '按网络重新认城市': 'ネットから位置を更新',
+      '碎碎念：开': 'つぶやき：オン', '碎碎念：关': 'つぶやき：オフ',
+      '夜间勿扰': 'おやすみモード', '开启勿扰': 'おやすみモードをオン', '关闭勿扰': 'おやすみモードをオフ',
+      '播报一次': '1回読み上げる', '按网络重新认城市': 'ネットから都市を再取得',
       '待机动作': '待機モーション', '精选（推荐）': 'おすすめ', '当前形象全部动作': 'このモデルの全動作', '自己选…': '自分で選ぶ', '选择动作…': 'モーションを選ぶ',
     },
     en: {
@@ -1464,22 +1552,629 @@
       '碎碎念设置': 'Whisper settings', '语言': 'Language', '模型大小': 'Model size',
       '配音': 'Voice', '字幕': 'Subtitles', '菜单': 'Menu',
       '中文': 'Chinese', '日本語': 'Japanese', 'English': 'English',
+      '开': 'On', '关': 'Off',
+      '这段时间不主动开口': 'no unprompted lines',
+      '现在会说话': 'she can speak now',
+      '开启省电': 'Turn power saver on', '关闭省电': 'Turn power saver off',
+      '动画照常播': 'Animations play as usual',
+      '定格待机动图，省 CPU / 电量': 'Freeze idle motion to save CPU',
+      '闲着 30 秒后暂停待机动图': 'Pause idle motion after 30s',
+      '一直播': 'Always playing',
+      '中性待机，不会随机哭/坐牢': 'Neutral idle only',
+      '在下面逐个勾': 'Tick them one by one below',
+      '共 {n} 段，剧情动作也会出现': 'All {n} clips, story actions included',
+      '已选 {n} 段': '{n} selected',
+      '官方表情包': 'Official stickers', '去眼罩': 'No blindfold',
+      '带眼罩睁眼': 'Blindfold · open', '带眼罩闭眼': 'Blindfold · closed',
       '当前': 'Now', '更多': 'More', '表情': 'Sticker',
       '打开设置': 'Open settings', '在 DSH 设置里改': 'Change in DSH settings', 'Ctrl+左键': 'Ctrl+Click',
       '闲暇一下 · 娅娅的表情包时刻': 'A quiet moment · sticker time',
       '发一张 Q 版表情': 'Send a chibi sticker',
       '天气': 'Weather', '今天的天气': "Today's weather", '重新定位': 'Refresh location',
       '音量': 'Volume', '静音：开': 'Mute: on', '静音：关': 'Mute: off',
+      '碎碎念：开': 'Whisper: on', '碎碎念：关': 'Whisper: off',
       '夜间勿扰': 'Quiet hours', '开启勿扰': 'Turn on', '关闭勿扰': 'Turn off',
       '播报一次': 'Ask now', '按网络重新认城市': 'Re-detect from network',
       '待机动作': 'Idle actions', '精选（推荐）': 'Curated', '当前形象全部动作': 'All actions', '自己选…': 'Pick my own…', '选择动作…': 'Choose actions…',
     },
   };
 
-  function trText(text) {
+  /* 设置面板 / 补充菜单文案：与 MENU_I18N 合并查表（面板语言默认跟随菜单语言）。
+   * 老的 MENU_I18N 里没有的键都放这里，避免再往那个大对象中间插行。 */
+  var PANEL_I18N = {
+    ja: {
+      "省电模式": "省電力モード",
+      "语音包与素材": "ボイスパックと素材",
+      "自检 / 修复": "チェック／修復",
+      "打开面板": "パネルを開く",
+      "检查素材、缺了一键修复": "素材を確認、欠けていれば一括修復",
+      "打开设置面板，可搜索勾选": "設定パネルで検索・選択",
+      "自定义时段…": "時間帯を自分で決める…",
+      "在设置面板里填时分": "設定パネルで時刻を入力",
+      "自定义音量…": "音量を自分で決める…",
+      "在设置面板里拖 0~100%": "設定パネルで 0〜100% をドラッグ",
+      "开关 / 间隔 / 选台词": "オン・オフ／間隔／セリフ",
+      "间隔": "間隔",
+      "选择台词…": "セリフを選ぶ…",
+      "打开设置面板": "設定パネルを開く",
+      "在 DSH 里打开面板": "DSH でパネルを開く",
+      "省电模式：开": "省電力モード：オン",
+      "省电模式：关": "省電力モード：オフ",
+      "面板": "パネル",
+      "秒": "秒",
+      "段": "本",
+      "关": "オフ",
+      "（跨午夜）": "（日をまたぐ）",
+      "自己选（还没勾，暂用精选）": "自分で選ぶ（未選択・おすすめを使用）",
+      "（这套共 ": "（このイメージは全 ",
+      " 段）": " 段）",
+      "还没认出城市": "都市がまだ分かりません",
+      "检查中": "チェック中",
+      "修复中": "修復中",
+      "没有匹配「": "「",
+      "」的动作": "」に一致するモーションはありません",
+      "跟随菜单": "メニューに合わせる",
+      "碎碎念": "つぶやき",
+      "开口说话": "しゃべる",
+      "静音": "ミュート",
+      "勿扰": "おやすみモード",
+      "时段": "時間帯",
+      "这段时间不主动开口（手动点台词照常播）": "この時間は自分から話しません（手動再生は可）",
+      "批量": "一括",
+      "全选": "全選択",
+      "全不选": "全解除",
+      "还原精选": "おすすめに戻す",
+      "搜索动作名（呆 / 哭 / 睡觉 …）": "モーション名で検索（呆然／泣く／寝る…）",
+      "检查素材": "素材をチェック",
+      "一键修复": "一括修復",
+      "结果": "結果",
+      "还没检查过": "まだチェックしていません",
+      "状态": "状態",
+      "还没检查": "まだチェックしていません",
+      "语音包": "ボイスパック",
+      "动作切片": "モーションクリップ",
+      "表情包": "スタンプ",
+      "已就绪": "準備完了",
+      "缺失": "欠落",
+      "城市": "都市",
+      "哥伦比娅 · 设置": "コロンビーナ · 設定",
+      "右键桌宠可再次打开": "ペットを右クリックでいつでも開けます",
+      "改动即时生效 · 只记在本机偏好里": "変更は即反映 · この端末の設定にのみ保存",
+      "只念勾选的句子": "チェックしたセリフのみ",
+      "模式": "モード",
+      "精选": "おすすめ",
+      "全部动作": "全モーション",
+      "自己选": "自分で選ぶ",
+      "闲聊": "雑談",
+      "问候": "あいさつ",
+      "关于我": "わたしについて",
+      "关于我们": "わたしたちについて",
+      "想要了解哥伦比娅": "コロンビーナを知りたい",
+      "关于同伴": "仲間について",
+      "突破的感受": "突破の想い",
+      "战斗中的低语": "戦いの中のささやき",
+      "元素战技与爆发": "元素スキルと元素爆発",
+      "角色语音": "キャラクターボイス",
+      "其他": "その他",
+      "对话完成": "会話完了",
+      "生成失败": "生成に失敗",
+      "输出被截断": "出力が途切れました",
+      "正在申请权限": "権限を要求中",
+      "模型在等你回答": "モデルがあなたの返答を待っています",
+      "语音包不完整，可以一键重下（约 33 MB）": "ボイスパックが不完全です（約 33 MB を一括ダウンロード可）",
+      /* ---- 官方形象的动作名会去掉「哥伦比娅-」前缀 ---- */
+      "吃点东西": "おやつ",
+      "哼歌": "鼻歌",
+      "困困": "ねむねむ",
+      "开心": "ごきげん",
+      "张望": "きょろきょろ",
+      "待机": "待機",
+      "待机二": "待機2",
+      "打个招呼": "ごあいさつ",
+      "打瞌睡": "居眠り",
+      "抱一下": "ハグ",
+      "摸摸头": "なでる",
+      "点头": "うなずき",
+      "被拎起": "つまみ上げ",
+      "走动": "歩き",
+      "蹦一下": "ぴょん",
+      "转个圈": "くるっ",
+      "轻轻摇": "ゆらゆら",
+      /* ---- 官方形象的动作名会去掉「哥伦比娅-」前缀 ---- */
+      /* ---- 动作切片名（素材文件名，只有中文）---- */
+      "Raid 1": "Raid 1",
+      "Raid 2": "Raid 2",
+      "冒泡 1": "あぶく 1",
+      "冒泡 2": "あぶく 2",
+      "刀 1": "刀 1",
+      "刀 2": "刀 2",
+      "到达(拿勺子)": "到着（スプーン）",
+      "到达(拿筷子)": "到着（箸）",
+      "到达": "到着",
+      "反向点赞": "低評価",
+      "叹号": "感嘆符",
+      "呆 1": "呆然 1",
+      "呆 2": "呆然 2",
+      "呆 3": "呆然 3",
+      "呆(贴纸) 1": "呆然（シール） 1",
+      "呆(贴纸) 2": "呆然（シール） 2",
+      "呆(贴纸) 3": "呆然（シール） 3",
+      "哭 1": "泣く 1",
+      "哭 2": "泣く 2",
+      "哭 3": "泣く 3",
+      "喝(饮料杯)": "飲む（カップ）",
+      "坐牢 1": "収監 1",
+      "坐牢 2": "収監 2",
+      "头晕": "目眩",
+      "害羞 1": "照れる 1",
+      "害羞 2": "照れる 2",
+      "工作(小睡)": "仕事（うたた寝）",
+      "工作(普通)": "仕事（通常）",
+      "工作(生气)": "仕事（怒り）",
+      "工作(疲倦)": "仕事（疲れ）",
+      "得分(0分)": "得点（0点）",
+      "得分(10分)": "得点（10点）",
+      "惊吓": "びっくり",
+      "打字(恼怒)": "タイピング（イライラ）",
+      "打字(普通)": "タイピング（通常）",
+      "打字(生气)": "タイピング（怒り）",
+      "指": "指差し",
+      "摸头": "なでなで",
+      "撬棍 1": "バール 1",
+      "撬棍 2": "バール 2",
+      "撬棍 3": "バール 3",
+      "敲头": "頭叩き",
+      "期待": "期待",
+      "死亡": "死亡",
+      "汗": "汗",
+      "点赞": "いいね",
+      "爱心 1": "ハート 1",
+      "爱心 2 (2)": "ハート 2（2）",
+      "爱心 2 (3)": "ハート 2（3）",
+      "爱心 2": "ハート 2",
+      "爱心 3 (2)": "ハート 3（2）",
+      "爱心 3 (3)": "ハート 3（3）",
+      "爱心 3": "ハート 3",
+      "玫瑰": "バラ",
+      "生气": "怒り",
+      "睡觉 (UU)": "寝る（UU）",
+      "睡觉(准备阶段1)": "寝る（準備1）",
+      "睡觉(准备阶段2)": "寝る（準備2）",
+      "睡觉(普通)": "寝る（通常）",
+      "笑": "笑う",
+      "紧张 1": "緊張 1",
+      "紧张 2": "緊張 2",
+      "红包 1": "お年玉 1",
+      "红包 2": "お年玉 2",
+      "自我安慰": "自分をなだめる",
+      "舔舔": "ぺろぺろ",
+      "荧光棒 1": "ペンライト 1",
+      "荧光棒 2": "ペンライト 2",
+      "记录 1": "記録 1",
+      "记录 2": "記録 2",
+      "通知_提示 Bits": "通知：Bits",
+      "通知_提示 星星_收藏": "通知：スター",
+      "通知_提示 点赞": "通知：いいね",
+      "通知_提示 爱心_喜欢": "通知：ハート",
+      "通知_提示 硬币": "通知：コイン",
+      "钱": "お金",
+      "问号": "疑問符",
+      "静音 1": "ミュート 1",
+      "静音 2": "ミュート 2",
+      "馋(刀叉)": "食欲（カトラリー）",
+      "馋(筷子)": "食欲（箸）",
+      "驾驶": "運転",
+      "哥伦比娅-吃点东西": "コロンビーナ：おやつ",
+      "哥伦比娅-哼歌": "コロンビーナ：鼻歌",
+      "哥伦比娅-困困": "コロンビーナ：ねむねむ",
+      "哥伦比娅-开心": "コロンビーナ：ごきげん",
+      "哥伦比娅-张望": "コロンビーナ：きょろきょろ",
+      "哥伦比娅-待机": "コロンビーナ：待機",
+      "哥伦比娅-待机二": "コロンビーナ：待機2",
+      "哥伦比娅-打个招呼": "コロンビーナ：ごあいさつ",
+      "哥伦比娅-打瞌睡": "コロンビーナ：居眠り",
+      "哥伦比娅-抱一下": "コロンビーナ：ハグ",
+      "哥伦比娅-摸摸头": "コロンビーナ：頭なで",
+      "哥伦比娅-点头": "コロンビーナ：うなずき",
+      "哥伦比娅-被拎起": "コロンビーナ：つまみ上げ",
+      "哥伦比娅-走动": "コロンビーナ：歩き",
+      "哥伦比娅-蹦一下": "コロンビーナ：ぴょん",
+      "哥伦比娅-转个圈": "コロンビーナ：くるっ",
+      "哥伦比娅-轻轻摇": "コロンビーナ：ゆらゆら",
+      "睁眼": "目を開ける",
+      "闭眼": "目を閉じる",
+      "语音 {n} 句": "ボイス {n} 句",
+      "语音缺失（{n} 句）": "ボイス不足（{n} 句）",
+      "动作 {n} 段": "モーション {n} 本",
+      "表情 {n} 张": "スタンプ {n} 枚",
+      "读取失败": "読み取り失敗",
+      "检查中…": "チェック中…",
+      "已检查 ": "チェック済み ",
+      "已重新下载语音包": "ボイスパックを再取得したよ",
+      "没有缺失（或修复失败，宿主日志有细节）": "欠けなし（修復失敗ならホストログ参照）",
+      "请求失败：": "リクエスト失敗：",
+      "已检查 {when} · 语音包 {v} 段 / 动作 {w} 段 / 表情 {m} 张": "チェック {when} · ボイス {v} 句 / モーション {w} 本 / スタンプ {m} 枚",
+    },
+    en: {
+      '省电模式': 'Power saver',
+      '语音包与素材': 'Voice pack & assets',
+      '自检 / 修复': 'Check / repair',
+      '打开面板': 'Open panel',
+      '检查素材、缺了一键修复': 'Check assets, repair missing in one click',
+      '打开设置面板，可搜索勾选': 'Open the panel to search and tick',
+      '自定义时段…': 'Custom hours…',
+      '在设置面板里填时分': 'Fill the times in the panel',
+      '自定义音量…': 'Custom volume…',
+      '在设置面板里拖 0~100%': 'Drag 0–100% in the panel',
+      '开关 / 间隔 / 选台词': 'Toggle / interval / lines',
+      '间隔': 'Interval',
+      '选择台词…': 'Choose lines…',
+      '打开设置面板': 'Open settings panel',
+      '在 DSH 里打开面板': 'Open in DSH',
+      '省电模式：开': 'Power saver: on',
+      '省电模式：关': 'Power saver: off',
+      '面板': 'Panel',
+      '跟随菜单': 'Follow menu',
+      '秒': 's',
+      '段': 'clips',
+      '关': 'Off',
+      '（跨午夜）': ' (crosses midnight)',
+      '自己选（还没勾，暂用精选）': 'Custom (nothing ticked — curated for now)',
+      '（这套共 ': ' (this form has ',
+      ' 段）': ' clips)',
+      '还没认出城市': 'City not recognised yet',
+      '检查中': 'Checking',
+      '修复中': 'Repairing',
+      '没有匹配「': 'No motion matches "',
+      '」的动作': '"',
+      '碎碎念': 'Whisper',
+      '开口说话': 'Speak',
+      '静音': 'Mute',
+      '勿扰': 'Quiet',
+      '时段': 'Hours',
+      '这段时间不主动开口（手动点台词照常播）': 'No unprompted lines here (manual playback works)',
+      '批量': 'Bulk',
+      '全选': 'Select all',
+      '全不选': 'Select none',
+      '还原精选': 'Reset to curated',
+      '搜索动作名（呆 / 哭 / 睡觉 …）': 'Search motion names (idle / cry / sleep …)',
+      '检查素材': 'Check assets',
+      '一键修复': 'Repair all',
+      '结果': 'Result',
+      '还没检查过': 'Not checked yet',
+      '状态': 'Status',
+      '还没检查': 'Not checked yet',
+      '语音包': 'Voice pack',
+      '动作切片': 'Motion clips',
+      '表情包': 'Stickers',
+      '已就绪': 'Ready',
+      '缺失': 'Missing',
+      '城市': 'City',
+      '哥伦比娅 · 设置': 'Columbina · Settings',
+      '右键桌宠可再次打开': 'Right-click the pet to reopen',
+      '改动即时生效 · 只记在本机偏好里': 'Applies immediately · saved in local prefs only',
+      '只念勾选的句子': 'Only ticked lines',
+      '模式': 'Mode',
+      '精选': 'Curated',
+      '全部动作': 'All motions',
+      '自己选': 'Custom',
+      '闲聊': 'Chat',
+      '问候': 'Greetings',
+      '关于我': 'About me',
+      '关于我们': 'About us',
+      '想要了解哥伦比娅': 'Getting to know Columbina',
+      '关于同伴': 'About companions',
+      '突破的感受': 'Ascension thoughts',
+      '战斗中的低语': 'Whispers in battle',
+      '元素战技与爆发': 'Elemental skill & burst',
+      '角色语音': 'Character voice',
+      '其他': 'Other',
+      '对话完成': 'Chat finished',
+      '生成失败': 'Generation failed',
+      '输出被截断': 'Output truncated',
+      '正在申请权限': 'Requesting permission',
+      '模型在等你回答': 'Waiting for your reply',
+      '语音包不完整，可以一键重下（约 33 MB）': 'Voice pack incomplete (one-click re-download ~33 MB)',
+      /* ---- 动作切片名（素材文件名，只有中文）---- */
+      'Raid 1': 'Raid 1',
+      'Raid 2': 'Raid 2',
+      '冒泡 1': 'Bubbling 1',
+      '冒泡 2': 'Bubbling 2',
+      '刀 1': 'Knife 1',
+      '刀 2': 'Knife 2',
+      '到达(拿勺子)': 'Arrive (spoon)',
+      '到达(拿筷子)': 'Arrive (chopsticks)',
+      '到达': 'Arrive',
+      '反向点赞': 'Thumbs Down',
+      '叹号': 'Exclamation Mark',
+      '呆 1': 'Dazed 1',
+      '呆 2': 'Dazed 2',
+      '呆 3': 'Dazed 3',
+      '呆(贴纸) 1': 'Dazed (sticker) 1',
+      '呆(贴纸) 2': 'Dazed (sticker) 2',
+      '呆(贴纸) 3': 'Dazed (sticker) 3',
+      '哭 1': 'Crying 1',
+      '哭 2': 'Crying 2',
+      '哭 3': 'Crying 3',
+      '喝(饮料杯)': 'Drink (cup)',
+      '坐牢 1': 'Jailed 1',
+      '坐牢 2': 'Jailed 2',
+      '头晕': 'Dizzy',
+      '害羞 1': 'Shy 1',
+      '害羞 2': 'Shy 2',
+      '工作(小睡)': 'Working (napping)',
+      '工作(普通)': 'Working (normal)',
+      '工作(生气)': 'Working (angry)',
+      '工作(疲倦)': 'Working (tired)',
+      '得分(0分)': 'Score (0 pts)',
+      '得分(10分)': 'Score (10 pts)',
+      '惊吓': 'Startled',
+      '打字(恼怒)': 'Typing (annoyed)',
+      '打字(普通)': 'Typing (normal)',
+      '打字(生气)': 'Typing (angry)',
+      '指': 'Point',
+      '摸头': 'Head Pat',
+      '撬棍 1': 'Crowbar 1',
+      '撬棍 2': 'Crowbar 2',
+      '撬棍 3': 'Crowbar 3',
+      '敲头': 'Head Bonk',
+      '期待': 'Hopeful',
+      '死亡': 'Death',
+      '汗': 'Sweat',
+      '点赞': 'Thumbs Up',
+      '爱心 1': 'Heart 1',
+      '爱心 2 (2)': 'Heart 2 (2)',
+      '爱心 2 (3)': 'Heart 2 (3)',
+      '爱心 2': 'Heart 2',
+      '爱心 3 (2)': 'Heart 3 (2)',
+      '爱心 3 (3)': 'Heart 3 (3)',
+      '爱心 3': 'Heart 3',
+      '玫瑰': 'Rose',
+      '生气': 'Angry',
+      '睡觉 (UU)': 'Sleeping (UU)',
+      '睡觉(准备阶段1)': 'Sleeping (prep 1)',
+      '睡觉(准备阶段2)': 'Sleeping (prep 2)',
+      '睡觉(普通)': 'Sleeping (normal)',
+      '笑': 'Laughing',
+      '紧张 1': 'Nervous 1',
+      '紧张 2': 'Nervous 2',
+      '红包 1': 'Red Packet 1',
+      '红包 2': 'Red Packet 2',
+      '自我安慰': 'Self-Comfort',
+      '舔舔': 'Lick Lick',
+      '荧光棒 1': 'Glow Stick 1',
+      '荧光棒 2': 'Glow Stick 2',
+      '记录 1': 'Record 1',
+      '记录 2': 'Record 2',
+      '通知_提示 Bits': 'Notify: Bits',
+      '通知_提示 星星_收藏': 'Notify: Star Favorite',
+      '通知_提示 点赞': 'Notify: Thumbs Up',
+      '通知_提示 爱心_喜欢': 'Notify: Heart Like',
+      '通知_提示 硬币': 'Notify: Coin',
+      '钱': 'Money',
+      '问号': 'Question Mark',
+      '静音 1': 'Mute 1',
+      '静音 2': 'Mute 2',
+      '馋(刀叉)': 'Hungry (fork & knife)',
+      '馋(筷子)': 'Hungry (chopsticks)',
+      '驾驶': 'Driving',
+      '哥伦比娅-吃点东西': 'Columbina: Snack',
+      '哥伦比娅-哼歌': 'Columbina: Humming',
+      '哥伦比娅-困困': 'Columbina: Sleepy',
+      '哥伦比娅-开心': 'Columbina: Happy',
+      '哥伦比娅-张望': 'Columbina: Look Around',
+      '哥伦比娅-待机': 'Columbina: Idle',
+      '哥伦比娅-待机二': 'Columbina: Idle 2',
+      '哥伦比娅-打个招呼': 'Columbina: Hello',
+      '哥伦比娅-打瞌睡': 'Columbina: Dozing',
+      '哥伦比娅-抱一下': 'Columbina: Hug',
+      '哥伦比娅-摸摸头': 'Columbina: Head Pat',
+      '哥伦比娅-点头': 'Columbina: Nod',
+      '哥伦比娅-被拎起': 'Columbina: Picked Up',
+      '哥伦比娅-走动': 'Columbina: Walking',
+      '哥伦比娅-蹦一下': 'Columbina: Hop',
+      '哥伦比娅-转个圈': 'Columbina: Spin',
+      '哥伦比娅-轻轻摇': 'Columbina: Sway',
+      '睁眼': 'Eyes Open',
+      '闭眼': 'Eyes Closed',
+      "语音 {n} 句": "{n} voice lines",
+      "语音缺失（{n} 句）": "{n} voice lines missing",
+      "动作 {n} 段": "{n} motion clips",
+      "表情 {n} 张": "{n} stickers",
+      "读取失败": "Read failed",
+      "检查中…": "Checking…",
+      "已检查 ": "Checked ",
+      "已重新下载语音包": "Voice pack re-downloaded",
+      "没有缺失（或修复失败，宿主日志有细节）": "Nothing missing (or repair failed — see host log)",
+      "请求失败：": "Request failed: ",
+      "已检查 {when} · 语音包 {v} 段 / 动作 {w} 段 / 表情 {m} 张": "Checked {when} · {v} voice lines / {w} motion clips / {m} stickers",
+    
+      "吃点东西": "Snack",
+      "哼歌": "Humming",
+      "困困": "Sleepy",
+      "开心": "Happy",
+      "张望": "Look Around",
+      "待机": "Idle",
+      "待机二": "Idle 2",
+      "打个招呼": "Hello",
+      "打瞌睡": "Dozing",
+      "抱一下": "Hug",
+      "摸摸头": "Head Pat",
+      "点头": "Nod",
+      "被拎起": "Picked Up",
+      "走动": "Walking",
+      "蹦一下": "Hop",
+      "转个圈": "Spin",
+      "轻轻摇": "Sway",
+    },
+  };
+
+  /* 台词标题（voice-index.js 里每句只有中文标题）：菜单 / 面板按标题显示，
+   * 标题没有对应译文时才退回该语言的正文。ja 用「・」、en 用「 · 」分隔。 */
+  var TITLE_I18N = {
+    ja: {
+    '闲聊·歌': '世間話・歌',
+    '闲聊·月亮': '世間話・月',
+    '闲聊·漫步': '世間話・散歩',
+    '早上好': 'おはよう',
+    '中午好': 'こんにちは',
+    '晚上好': 'こんばんは',
+    '晚安': 'おやすみ',
+    '下雨的时候': '雨の日',
+    '雨过天晴': '雨上がり',
+    '打雷的时候': '雷の日',
+    '下雪的时候': '雪の日',
+    '刮大风了': '暴風の日',
+    '在沙漠的时候': '砂漠にいる時',
+    '初次见面': '初めまして',
+    '关于哥伦比娅自己·眼罩': 'コロンビーナ自身について・アイマスク',
+    '关于哥伦比娅自己·家': 'コロンビーナ自身について・家',
+    '哥伦比娅的爱好': 'コロンビーナの趣味',
+    '哥伦比娅的烦恼': 'コロンビーナの悩み',
+    '喜欢的食物': '好きな食べ物',
+    '讨厌的食物': '嫌いな食べ物',
+    '生日': '誕生日',
+    '收到赠礼·其一': '贈り物を受け取る・1',
+    '收到赠礼·其二': '贈り物を受け取る・2',
+    '收到赠礼·其三': '贈り物を受け取る・3',
+    '关于我们·事迹': '功績について',
+    '关于我们·旅行': '旅について',
+    '关于「三相月临」': '「三相月臨」について',
+    '有什么想要分享': 'シェアしたいこと',
+    '感兴趣的见闻': '興味のあること',
+    '想要了解哥伦比娅·其一': 'コロンビーナを知る・1',
+    '想要了解哥伦比娅·其二': 'コロンビーナを知る・2',
+    '想要了解哥伦比娅·其三': 'コロンビーナを知る・3',
+    '想要了解哥伦比娅·其四': 'コロンビーナを知る・4',
+    '想要了解哥伦比娅·其五': 'コロンビーナを知る・5',
+    '关于菈乌玛': 'ラウマについて',
+    '关于尼可': 'ニコについて',
+    '关于那维莱特': 'ヌヴィレットについて',
+    '关于尘世七执政': '俗世の七執政について',
+    '关于「冰之女皇」': '「氷の女皇」について',
+    '关于「丑角」': '「道化」について',
+    '关于「队长」': '「隊長」について',
+    '关于「博士」': '「博士」について',
+    '关于阿蕾奇诺': 'アルレッキーノについて',
+    '关于「公鸡」': '「雄鶏」について',
+    '关于桑多涅·发条': 'サンドローネについて・ゼンマイ',
+    '关于桑多涅·发条其二': 'サンドローネについて・ゼンマイ その二',
+    '关于「富人」': '「富者」について',
+    '关于罗莎琳': 'ロザリンについて',
+    '关于「公子」': '「公子」について',
+    '突破的感受·起': '突破した感想・起',
+    '突破的感受·承': '突破した感想・承',
+    '突破的感受·转': '突破した感想・転',
+    '突破的感受·合': '突破した感想・結',
+    '打开宝箱·其一': '宝箱を開ける・1',
+    '打开宝箱·其二': '宝箱を開ける・2',
+    '打开宝箱·其三': '宝箱を開ける・3',
+    '生命值低·其一': 'HP低下・1',
+    '生命值低·其二': 'HP低下・2',
+    '生命值低·其三': 'HP低下・3',
+    '同伴生命值低·其一': '仲間HP低下・1',
+    '同伴生命值低·其二': '仲間HP低下・2',
+    '倒下·其一': '戦闘不能・1',
+    '倒下·其二': '戦闘不能・2',
+    '倒下·其三': '戦闘不能・3',
+    '普通受击·其一': 'ダメージを受ける・1',
+    '重受击·其一': '重ダメージを受ける・1',
+    '重受击·其二': '重ダメージを受ける・2',
+    '加入队伍·其一': 'チーム加入・1',
+    '加入队伍·其二': 'チーム加入・2',
+    '加入队伍·其三': 'チーム加入・3',
+    '元素战技·其一': '元素スキル・1',
+    '元素战技·其二': '元素スキル・2',
+    '元素战技·其三': '元素スキル・3',
+    '元素爆发·其一': '元素爆発・1',
+    '元素爆发·其二': '元素爆発・2',
+    '元素爆发·其三': '元素爆発・3',
+    },
+    en: {
+    '闲聊·歌': 'Chat: Singing',
+    '闲聊·月亮': 'Chat: Moongazing',
+    '闲聊·漫步': 'Chat: Long Walks',
+    '早上好': 'Good Morning',
+    '中午好': 'Good Afternoon',
+    '晚上好': 'Good Evening',
+    '晚安': 'Good Night',
+    '下雨的时候': 'When It Rains',
+    '雨过天晴': 'After the Rain',
+    '打雷的时候': 'When Thunder Strikes',
+    '下雪的时候': 'When It Snows',
+    '刮大风了': 'When the Wind Is Blowing',
+    '在沙漠的时候': 'In the Desert',
+    '初次见面': 'Hello',
+    '关于哥伦比娅自己·眼罩': 'About Columbina: Eye Mask',
+    '关于哥伦比娅自己·家': 'About Columbina: Home',
+    '哥伦比娅的爱好': 'Columbina\'s Hobbies',
+    '哥伦比娅的烦恼': 'Columbina\'s Troubles',
+    '喜欢的食物': 'Favorite Food',
+    '讨厌的食物': 'Least Favorite Food',
+    '生日': 'Birthday',
+    '收到赠礼·其一': 'Receiving a Gift: I',
+    '收到赠礼·其二': 'Receiving a Gift: II',
+    '收到赠礼·其三': 'Receiving a Gift: III',
+    '关于我们·事迹': 'About Us: Great Deeds',
+    '关于我们·旅行': 'About Us: Traveling',
+    '关于「三相月临」': 'About the "Tri-Lunar Convergence"',
+    '有什么想要分享': 'Something to Share',
+    '感兴趣的见闻': 'Interesting Things',
+    '想要了解哥伦比娅·其一': 'More About Columbina: I',
+    '想要了解哥伦比娅·其二': 'More About Columbina: II',
+    '想要了解哥伦比娅·其三': 'More About Columbina: III',
+    '想要了解哥伦比娅·其四': 'More About Columbina: IV',
+    '想要了解哥伦比娅·其五': 'More About Columbina: V',
+    '关于菈乌玛': 'About Lauma',
+    '关于尼可': 'About Nicole',
+    '关于那维莱特': 'About Neuvillette',
+    '关于尘世七执政': 'About The Seven',
+    '关于「冰之女皇」': 'About the Tsaritsa',
+    '关于「丑角」': 'About The Jester',
+    '关于「队长」': 'About The Captain',
+    '关于「博士」': 'About The Doctor',
+    '关于阿蕾奇诺': 'About Arlecchino',
+    '关于「公鸡」': 'About The Rooster',
+    '关于桑多涅·发条': 'About Sandrone: Clockwork Nature',
+    '关于桑多涅·发条其二': 'About Sandrone: Clockwork Nature II',
+    '关于「富人」': 'About Regrator',
+    '关于罗莎琳': 'About Rosalyne',
+    '关于「公子」': 'About Childe',
+    '突破的感受·起': 'Feelings About Ascension: Intro',
+    '突破的感受·承': 'Feelings About Ascension: Building Up',
+    '突破的感受·转': 'Feelings About Ascension: Getting Stronger',
+    '突破的感受·合': 'Feelings About Ascension: Climax',
+    '打开宝箱·其一': 'Opening Treasure Chest · 1',
+    '打开宝箱·其二': 'Opening Treasure Chest · 2',
+    '打开宝箱·其三': 'Opening Treasure Chest · 3',
+    '生命值低·其一': 'Low HP · 1',
+    '生命值低·其二': 'Low HP · 2',
+    '生命值低·其三': 'Low HP · 3',
+    '同伴生命值低·其一': 'Ally at Low HP · 1',
+    '同伴生命值低·其二': 'Ally at Low HP · 2',
+    '倒下·其一': 'Fallen · 1',
+    '倒下·其二': 'Fallen · 2',
+    '倒下·其三': 'Fallen · 3',
+    '普通受击·其一': 'Light Hit Taken · 1',
+    '重受击·其一': 'Heavy Hit Taken · 1',
+    '重受击·其二': 'Heavy Hit Taken · 2',
+    '加入队伍·其一': 'Joining Party · 1',
+    '加入队伍·其二': 'Joining Party · 2',
+    '加入队伍·其三': 'Joining Party · 3',
+    '元素战技·其一': 'Elemental Skill · 1',
+    '元素战技·其二': 'Elemental Skill · 2',
+    '元素战技·其三': 'Elemental Skill · 3',
+    '元素爆发·其一': 'Elemental Burst · 1',
+    '元素爆发·其二': 'Elemental Burst · 2',
+    '元素爆发·其三': 'Elemental Burst · 3',
+    },
+  };
+
+  function trText(text, lang) {
     if (!text) return text;
-    if (menuLang === 'zh') return text;
-    var table = MENU_I18N[menuLang] || {};
+    var use = lang || menuLang;
+    if (use === 'zh') return text;
+    var table = Object.assign({}, MENU_I18N[use] || {}, PANEL_I18N[use] || {}, (TITLE_I18N && TITLE_I18N[use]) || {});
     if (table[text] !== undefined) return table[text];
     // 「当前：XXX」/「动图放完后 N 秒切」这类带前缀的，逐段替换
     if (text.indexOf('当前：') === 0) return (table['当前'] || '当前') + '：' + text.slice(3);
@@ -1498,6 +2193,16 @@
   function scaleText(k, lang) {
     var n = (k % 1 === 0 ? String(k) : String(k));
     return 'x' + n;
+  }
+
+  /** 菜单里的「N 秒」：英文用 s，中文与日文用「秒」。 */
+  function secondsText(sec) {
+    return menuLang === 'en' ? sec + 's' : sec + ' 秒';
+  }
+
+  /** 带 {n} 占位的文案：先按菜单语言查字典模板，再把占位换掉。 */
+  function fmtText(template, n) {
+    return String(trText(template, menuLang)).replace('{n}', String(n));
   }
 
   function translateTree(node) {
@@ -1731,11 +2436,11 @@
     var items = [];
     for (var i = 0; i < ANIM_INTERVAL_CHOICES.length; i++) {
       var ms = ANIM_INTERVAL_CHOICES[i];
-      var item = { label: animIntervalLabel(ms), __columbinaAnimInterval: ms };
-      if (Math.abs(ms - animIntervalMs) < 1) item.hint = '当前';
+      var item = { label: intervalText(ms, menuLang), __columbinaAnimInterval: ms };
+      if (Math.abs(ms - animIntervalMs) < 1) item.hint = trText('当前');
       items.push(item);
     }
-    return { label: '切换间隔', hint: animIntervalLabel(animIntervalMs), children: items };
+    return { label: '切换间隔', hint: intervalText(animIntervalMs, menuLang), children: items };
   }
 
   /** 「语言」：配音 / 字幕 / 菜单 三件事各选一次，允许混搭 */
@@ -1753,7 +2458,7 @@
     }
     return {
       label: '语言',
-      hint: LANG_NAME[voiceLang] + ' / ' + LANG_NAME[subLang] + ' / ' + LANG_NAME[menuLang],
+      hint: trText(LANG_NAME[voiceLang]) + ' / ' + trText(LANG_NAME[subLang]) + ' / ' + trText(LANG_NAME[menuLang]),
       children: [
         { label: '配音', hint: LANG_NAME[voiceLang], children: langItems('voice') },
         { label: '字幕', hint: LANG_NAME[subLang], children: langItems('sub') },
@@ -1789,11 +2494,11 @@
     var active = currentSkin();
     return {
       label: '2D live 形象',
-      hint: active ? '当前：' + active.name : '',
+      hint: active ? trText('当前') + (menuLang === 'en' ? ': ' : '：') + trText(active.name) : '',
       children: skins.map(function (skin) {
         return {
-          label: skin.name,
-          hint: skin.id === skinId ? '当前' : '',
+          label: trText(skin.name),
+          hint: skin.id === skinId ? trText('当前') : '',
           action: 'columbina-skin',
           __columbinaSkin: skin.id,
         };
@@ -1812,6 +2517,9 @@
   var PANEL_ID = 'columbina-voice-panel';
   var panelEl = null;
   var panelSection = 'voice';
+  // 面板重渲染时默认留在原地：以前每次重渲染都跳到段首，拖完滑杆/点一下开关面板就自己滚走。
+  // 只有「从菜单明确点名要看某一段」时才置 true，渲染完自动跳过去并复位。
+  var panelJumpSection = false;
   var panelBusy = false;
 
   function panelStyles() {
@@ -1863,6 +2571,10 @@
       '#' + PANEL_ID + ' .cv-search{width:100%;box-sizing:border-box;margin:6px 0 5px;padding:5px 9px;border-radius:9px;',
       'border:1px solid rgba(160,132,230,.28);background:rgba(0,0,0,.22);color:#E8DEFF;font-size:11.5px;outline:0}',
       '#' + PANEL_ID + ' .cv-search:focus{border-color:rgba(201,175,245,.72)}',
+      '#' + PANEL_ID + ' .cv-time{box-sizing:border-box;width:82px;padding:3px 6px;border-radius:8px;font-family:inherit;',
+      'border:1px solid rgba(160,132,230,.28);background:rgba(0,0,0,.22);color:#E8DEFF;font-size:11.5px;outline:0}',
+      '#' + PANEL_ID + ' .cv-time:focus{border-color:rgba(201,175,245,.72)}',
+      '#' + PANEL_ID + ' .cv-hint{flex:1;min-width:86px;text-align:left;font-size:10.5px;color:#8E7FB4}',
       '#' + PANEL_ID + ' .cv-lines.tall{max-height:210px}',
       '#' + PANEL_ID + ' .cv-empty{font-size:11px;color:#8E7FB4;padding:6px 2px}',
       '#' + PANEL_ID + ' .cv-foot{padding:7px 14px 9px;border-top:1px solid rgba(160,132,230,.14);',
@@ -1879,11 +2591,18 @@
   }
 
   function langChips(kind) {
-    var cur = kind === 'voice' ? voiceLang : (kind === 'sub' ? subLang : menuLang);
-    return LANGS.map(function (code) {
+    var cur = kind === 'voice' ? voiceLang
+      : (kind === 'sub' ? subLang : (kind === 'panel' ? panelLang : menuLang));
+    var html = LANGS.map(function (code) {
       return '<button class="cv-chip' + (code === cur ? ' on' : '') + '" data-act="lang" data-kind="' +
         kind + '" data-v="' + code + '">' + LANG_NAME[code] + '</button>';
     }).join('');
+    if (kind === 'panel') {
+      // 面板语言多一个「跟随菜单」：空串表示跟随，菜单换语言时面板跟着换。
+      html = '<button class="cv-chip' + (cur === '' ? ' on' : '') + '" data-act="lang" data-kind="panel" data-v="">' +
+        panelTr('跟随菜单') + '</button>' + html;
+    }
+    return html;
   }
 
   function scaleChips() {
@@ -1911,17 +2630,27 @@
       if (!byTab[tab]) { byTab[tab] = []; groups.push(tab); }
       byTab[tab].push(line);
     }
-    var html = ['<div class="cv-row" style="padding-top:2px"><span class="cv-lab">只念勾选的句子</span>',
-      '<button class="cv-mini" data-act="lines-all">全选</button>',
-      '<button class="cv-mini" data-act="lines-none">全不选</button></div>',
+    var html = ['<div class="cv-row" style="padding-top:2px"><span class="cv-lab">' + panelTr('只念勾选的句子') + '</span>',
+      '<button class="cv-mini" data-act="lines-all">' + panelTr('全选') + '</button>',
+      '<button class="cv-mini" data-act="lines-none">' + panelTr('全不选') + '</button></div>',
       '<div class="cv-lines">'];
     for (var g = 0; g < groups.length; g++) {
-      html.push('<div class="cv-grp">' + groups[g] + '</div>');
+      html.push('<div class="cv-grp">' + panelTr(groups[g]) + '</div>');
       var arr = byTab[groups[g]];
       for (var k = 0; k < arr.length; k++) {
         var l = arr[k];
         var text = (l.t && (l.t[subLang] || l.t.zh)) || l.label || '';
-        var name = String(l.label || text).replace(/</g, '&lt;');
+        var plangNow = panelLangNow();
+        var shown = String(l.label || text);
+        if (plangNow !== 'zh') {
+          var titleTr = l.label ? trText(l.label, plangNow) : '';
+          if (titleTr && titleTr !== l.label) shown = truncateText(titleTr, 22);
+          else {
+            var other = l.t ? (l.t[plangNow] || '') : '';
+            if (other) shown = truncateText(other, 22);
+          }
+        }
+        var name = String(shown).replace(/</g, '&lt;');
         html.push('<label class="cv-line" title="' + String(text).replace(/"/g, '&quot;').replace(/</g, '&lt;') +
           '"><input type="checkbox" data-act="line" data-idx="' + l.index + '"' +
           (lineAllowed(l) ? ' checked' : '') + '><span>' + name + '</span></label>');
@@ -1933,7 +2662,7 @@
 
   function cityLabel() {
     var g = weatherGeo || readStore(WEATHER_GEO_KEY);
-    if (!g) return '还没认出城市';
+    if (!g) return panelTr('还没认出城市');
     return g.cityZh || g.city || '';
   }
 
@@ -1944,10 +2673,10 @@
   }
   function idleModeRow() {
     var modes = [['curated', '精选'], ['all', '全部动作'], ['custom', '自己选']];
-    return '<div class="cv-row"><span class="cv-lab">模式</span><div class="cv-chips">' +
+    return '<div class="cv-row"><span class="cv-lab">' + panelTr('模式') + '</span><div class="cv-chips">' +
       modes.map(function (m) {
         return '<button class="cv-chip' + (idlePref.mode === m[0] ? ' on' : '') + '" data-act="idle-mode" data-v="' +
-          m[0] + '">' + m[1] + '</button>';
+          m[0] + '">' + panelTr(m[1]) + '</button>';
       }).join('') + '</div></div>';
   }
   function idleListHTML() {
@@ -1959,16 +2688,19 @@
     for (var i = 0; i < pool.length; i++) {
       var name = pool[i];
       var label = stripAnimPrefix(name, skin);
-      if (q && label.toLowerCase().indexOf(q) < 0 && name.toLowerCase().indexOf(q) < 0) continue;
+      // 动作切片名是素材文件名，只有中文；面板语言不是中文时走 ACTION_I18N 查表
+      var shown = panelTr(label);
+      if (q && label.toLowerCase().indexOf(q) < 0 && name.toLowerCase().indexOf(q) < 0 &&
+          shown.toLowerCase().indexOf(q) < 0) continue;
       var on = picks.indexOf(name) >= 0;
       rows.push('<label class="cv-line" title="' + cvEscape(name) + '"><input type="checkbox" data-act="idle-pick" data-v="' +
-        cvEscape(name) + '"' + (on ? ' checked' : '') + '><span>' + cvEscape(label) + '</span></label>');
+        cvEscape(name) + '"' + (on ? ' checked' : '') + '><span>' + cvEscape(shown) + '</span></label>');
     }
-    if (!rows.length) return '<div class="cv-empty">没有匹配「' + cvEscape(idleFilter) + '」的动作</div>';
+    if (!rows.length) return '<div class="cv-empty">' + panelTr('没有匹配「') + cvEscape(idleFilter) + panelTr('」的动作') + '</div>';
     return rows.join('');
   }
   function idleCountText() {
-    return idleModeText() + '（这套共 ' + skinPool(currentSkin()).length + ' 段）';
+    return idleModeText() + panelTr('（这套共 ') + skinPool(currentSkin()).length + panelTr(' 段）');
   }
   function refreshIdleList() {
     var list = document.getElementById('cv-idle-list');
@@ -1989,20 +2721,20 @@
 
   function assetsRows() {
     if (!assetsInfo) {
-      var hint = assetsBusy ? assetsBusy + '…' : '还没检查';
-      return '<div class="cv-row"><span class="cv-lab">状态</span>' +
+      var hint = assetsBusy ? panelTr(assetsBusy) + '…' : panelTr('还没检查');
+      return '<div class="cv-row"><span class="cv-lab">' + panelTr('状态') + '</span>' +
         '<span class="cv-val" style="flex:1;text-align:left">' + cvEscape(hint) + '</span></div>';
     }
     var voice = assetsInfo.voice || {};
     var webm = assetsInfo.webm || {};
     var memes = assetsInfo.memes || {};
     var rows = [
-      '<div class="cv-row"><span class="cv-lab">语音包</span>' +
-        '<span class="cv-val" style="flex:1;text-align:left">' + (voice.ready ? '已就绪' : '缺失') +
+      '<div class="cv-row"><span class="cv-lab">' + panelTr('语音包') + '</span>' +
+        '<span class="cv-val" style="flex:1;text-align:left">' + (voice.ready ? panelTr('已就绪') : panelTr('缺失')) +
         ' · ' + (voice.files || 0) + ' 段 · ' + assetsMb(voice.bytes) + '</span></div>',
-      '<div class="cv-row"><span class="cv-lab">动作切片</span>' +
+      '<div class="cv-row"><span class="cv-lab">' + panelTr('动作切片') + '</span>' +
         '<span class="cv-val" style="flex:1;text-align:left">' + (webm.count || 0) + ' 段 · ' + assetsMb(webm.bytes) + '</span></div>',
-      '<div class="cv-row"><span class="cv-lab">表情包</span>' +
+      '<div class="cv-row"><span class="cv-lab">' + panelTr('表情包') + '</span>' +
         '<span class="cv-val" style="flex:1;text-align:left">' + (memes.count || 0) + ' 张 · ' + assetsMb(memes.bytes) + '</span></div>'
     ];
     return rows.join('');
@@ -2012,15 +2744,15 @@
     var box = document.getElementById('cv-assets');
     if (box) box.innerHTML = assetsRows();
     var note = document.getElementById('cv-assets-note');
-    if (note) note.textContent = assetsNote || (assetsBusy ? assetsBusy + '…' : '还没检查过');
+    if (note) note.textContent = assetsNote || (assetsBusy ? panelTr(assetsBusy) + '…' : panelTr('还没检查过'));
     var chk = document.getElementById('cv-assets-check');
     if (chk) {
-      chk.textContent = assetsBusy === '检查中' ? '检查中…' : '检查素材';
+      chk.textContent = assetsBusy === '检查中' ? panelTr('检查中') + '…' : panelTr('检查素材');
       chk.disabled = Boolean(assetsBusy);
     }
     var rep = document.getElementById('cv-assets-repair');
     if (rep) {
-      rep.textContent = assetsBusy === '修复中' ? '修复中…' : '一键修复';
+      rep.textContent = assetsBusy === '修复中' ? panelTr('修复中') + '…' : panelTr('一键修复');
       rep.disabled = Boolean(assetsBusy);
     }
   }
@@ -2049,18 +2781,19 @@
       var m = (assetsInfo && assetsInfo.memes) || {};
       var stamp = new Date().toLocaleTimeString('zh-CN', { hour12: false });
       if (repair) {
-        assetsNote = (data && data.repaired ? '已重新下载语音包' : '没有缺失（或修复失败，宿主日志有细节）') + ' · ' + stamp;
+        assetsNote = panelTr(data && data.repaired ? '已重新下载语音包' : '没有缺失（或修复失败，宿主日志有细节）') + ' · ' + stamp;
         sayQuiet(data && data.repaired ? '语音包修好了' : '都齐着呢，不用修');
       } else {
-        assetsNote = '已检查 ' + stamp + ' · 语音包 ' + (v.files || 0) + ' 段 / 动作 ' +
-          (w.count || 0) + ' 段 / 表情 ' + (m.count || 0) + ' 张';
+        assetsNote = panelFmtArgs('已检查 {when} · 语音包 {v} 段 / 动作 {w} 段 / 表情 {m} 张', {
+          when: stamp, v: v.files || 0, w: w.count || 0, m: m.count || 0,
+        });
         sayQuiet('素材自检完成：语音包 ' + (v.files || 0) + ' 段');
       }
       console.log('[columbina-voice] 素材自检完成', assetsNote);
       refreshAssets();
     }).catch(function (err) {
       assetsBusy = '';
-      assetsNote = '请求失败：' + (err && err.message ? err.message : String(err));
+      assetsNote = panelTr('请求失败：') + (err && err.message ? err.message : String(err));
       console.log('[columbina-voice] 素材自检失败', err);
       sayQuiet('素材自检没连上宿主');
       refreshAssets();
@@ -2071,50 +2804,72 @@
     if (!panelEl) return;
     var target = document.getElementById('cv-body');
     if (!target) return;
+    var keepScroll = target.scrollTop; // 重建会把滚动位置清零，先记下来
     target.innerHTML = [
-      '<div class="cv-sec" data-sec="voice">碎碎念</div>',
-      '<div class="cv-row"><span class="cv-lab">开口说话</span>',
+      '<div class="cv-sec" data-sec="voice">' + panelTr('碎碎念') + '</div>',
+      '<div class="cv-row"><span class="cv-lab">' + panelTr('开口说话') + '</span>',
       '<button class="cv-switch' + (enabled ? ' on' : '') + '" data-act="enabled" aria-label="切换"><span></span></button></div>',
-      '<div class="cv-row"><span class="cv-lab">间隔</span>',
+      '<div class="cv-row"><span class="cv-lab">' + panelTr('间隔') + '</span>',
       '<input type="range" min="60" max="180" step="15" value="' + intervalSec + '" data-act="interval">',
-      '<span class="cv-val">' + intervalSec + ' 秒</span></div>',
-      '<div class="cv-sec" data-sec="lang">语言</div>',
-      '<div class="cv-row"><span class="cv-lab">配音</span><div class="cv-chips">' + langChips('voice') + '</div></div>',
-      '<div class="cv-row"><span class="cv-lab">字幕</span><div class="cv-chips">' + langChips('sub') + '</div></div>',
-      '<div class="cv-row"><span class="cv-lab">菜单</span><div class="cv-chips">' + langChips('menu') + '</div></div>',
-      '<div class="cv-sec" data-sec="scale">模型大小</div>',
+      '<span class="cv-val" id="cv-int-val">' + intervalSec + ' ' + panelTr('秒') + '</span></div>',
+      '<div class="cv-sec" data-sec="volume">' + panelTr('音量') + '</div>',
+      '<div class="cv-row"><span class="cv-lab">' + panelTr('音量') + '</span>',
+      '<input type="range" min="0" max="100" step="5" value="' + volumePct() + '" data-act="volume">',
+      '<span class="cv-val" id="cv-vol-val">' + volumeLabel() + '</span></div>',
+      '<div class="cv-row"><span class="cv-lab">' + panelTr('静音') + '</span>',
+      '<button class="cv-switch' + (mutedPref ? ' on' : '') + '" data-act="mute" aria-label="切换"><span></span></button></div>',
+      '<div class="cv-sec" data-sec="quiet">' + panelTr('夜间勿扰') + '</div>',
+      '<div class="cv-row"><span class="cv-lab">' + panelTr('勿扰') + '</span>',
+      '<button class="cv-switch' + (quietPref.on ? ' on' : '') + '" data-act="quiet" aria-label="切换"><span></span></button>',
+      '<span class="cv-hint">' + panelTr('这段时间不主动开口（手动点台词照常播）') + '</span></div>',
+      '<div class="cv-row"><span class="cv-lab">' + panelTr('时段') + '</span>',
+      '<input class="cv-time" type="time" step="60" data-act="quiet-start" value="' + hhmmText(quietPref.start) + '">',
+      '<span class="cv-val" style="min-width:12px">–</span>',
+      '<input class="cv-time" type="time" step="60" data-act="quiet-end" value="' + hhmmText(quietPref.end) + '">',
+      '<span class="cv-hint" id="cv-quiet-val">' + quietLabel() + '</span></div>',
+      '<div class="cv-sec" data-sec="lang">' + panelTr('语言') + '</div>',
+      '<div class="cv-row"><span class="cv-lab">' + panelTr('配音') + '</span><div class="cv-chips">' + langChips('voice') + '</div></div>',
+      '<div class="cv-row"><span class="cv-lab">' + panelTr('字幕') + '</span><div class="cv-chips">' + langChips('sub') + '</div></div>',
+      '<div class="cv-row"><span class="cv-lab">' + panelTr('菜单') + '</span><div class="cv-chips">' + langChips('menu') + '</div></div>',
+      '<div class="cv-row"><span class="cv-lab">' + panelTr('面板') + '</span><div class="cv-chips">' + langChips('panel') + '</div></div>',
+      '<div class="cv-sec" data-sec="scale">' + panelTr('模型大小') + '</div>',
       '<div class="cv-row"><div class="cv-chips" style="flex:1;justify-content:flex-start">' + scaleChips() + '</div></div>',
-      '<div class="cv-sec">2D live 形象</div>',
+      '<div class="cv-sec">' + panelTr('2D live 形象') + '</div>',
       '<div class="cv-row"><div class="cv-chips" style="flex:1;justify-content:flex-start">' + skinChips() + '</div></div>',
-      '<div class="cv-sec" data-sec="idle">待机动作</div>',
+      '<div class="cv-sec" data-sec="idle">' + panelTr('待机动作') + '</div>',
       idleModeRow(),
-      '<div class="cv-row"><span class="cv-lab">当前</span><span class="cv-val" id="cv-idle-count" style="flex:1;text-align:left">' +
+      '<div class="cv-row"><span class="cv-lab">' + panelTr('当前') + '</span><span class="cv-val" id="cv-idle-count" style="flex:1;text-align:left">' +
         cvEscape(idleCountText()) + '</span></div>',
-      '<div class="cv-row"><span class="cv-lab">批量</span>',
-      '<button class="cv-mini" data-act="idle-all">全选</button>',
-      '<button class="cv-mini" data-act="idle-none">全不选</button>',
-      '<button class="cv-mini" data-act="idle-curated">还原精选</button></div>',
-      '<input class="cv-search" id="cv-idle-search" type="text" placeholder="搜索动作名（呆 / 哭 / 睡觉 …）" value="' + cvEscape(idleFilter) + '">',
+      '<div class="cv-row"><span class="cv-lab">' + panelTr('批量') + '</span>',
+      '<button class="cv-mini" data-act="idle-all">' + panelTr('全选') + '</button>',
+      '<button class="cv-mini" data-act="idle-none">' + panelTr('全不选') + '</button>',
+      '<button class="cv-mini" data-act="idle-curated">' + panelTr('还原精选') + '</button></div>',
+      '<input class="cv-search" id="cv-idle-search" type="text" placeholder="' + panelTr('搜索动作名（呆 / 哭 / 睡觉 …）') + '" value="' + cvEscape(idleFilter) + '">',
       '<div class="cv-lines tall" id="cv-idle-list">' + idleListHTML() + '</div>',
-      '<div class="cv-sec" data-sec="assets">语音包与素材</div>',
+      '<div class="cv-sec" data-sec="assets">' + panelTr('语音包与素材') + '</div>',
       '<div id="cv-assets">' + assetsRows() + '</div>',
-      '<div class="cv-row"><button class="cv-mini" id="cv-assets-check" data-act="assets-check">检查素材</button>',
-      '<button class="cv-mini" id="cv-assets-repair" data-act="assets-repair">一键修复</button></div>',
-      '<div class="cv-row"><span class="cv-lab">结果</span>' +
-        '<span class="cv-val" id="cv-assets-note" style="flex:1;text-align:left">还没检查过</span></div>',
-      '<div class="cv-sec" data-sec="lines">原声台词</div>',
+      '<div class="cv-row"><button class="cv-mini" id="cv-assets-check" data-act="assets-check">' + panelTr('检查素材') + '</button>',
+      '<button class="cv-mini" id="cv-assets-repair" data-act="assets-repair">' + panelTr('一键修复') + '</button></div>',
+      '<div class="cv-row"><span class="cv-lab">' + panelTr('结果') + '</span>' +
+        '<span class="cv-val" id="cv-assets-note" style="flex:1;text-align:left">' + panelTr('还没检查过') + '</span></div>',
+      '<div class="cv-sec" data-sec="lines">' + panelTr('原声台词') + '</div>',
       linesBlock(),
-      '<div class="cv-sec" data-sec="weather">天气</div>',
-      '<div class="cv-row"><span class="cv-lab">城市</span><span class="cv-val" style="flex:1;text-align:left">' +
+      '<div class="cv-sec" data-sec="weather">' + panelTr('天气') + '</div>',
+      '<div class="cv-row"><span class="cv-lab">' + panelTr('城市') + '</span><span class="cv-val" style="flex:1;text-align:left">' +
         cityLabel() + '</span></div>',
-      '<div class="cv-row"><button class="cv-chip" data-act="weather-loc">重新定位</button>',
-      '<button class="cv-chip" data-act="weather-today">播报一次</button></div>',
+      '<div class="cv-row"><button class="cv-chip" data-act="weather-loc">' + panelTr('重新定位') + '</button>',
+      '<button class="cv-chip" data-act="weather-today">' + panelTr('播报一次') + '</button></div>',
     ].join('');
     var body = document.getElementById('cv-body');
     if (body) {
-      var sec = body.querySelector('.cv-sec[data-sec="' + panelSection + '"]');
-      var top = sec ? Math.max(0, sec.offsetTop - 6) : 0;
-      body.scrollTop = top;
+      if (panelJumpSection) {
+        var sec = body.querySelector('.cv-sec[data-sec="' + panelSection + '"]');
+        var top = sec ? Math.max(0, sec.offsetTop - 6) : 0;
+        body.scrollTop = top;
+        panelJumpSection = false;
+      } else {
+        body.scrollTop = keepScroll;
+      }
     }
     if (panelSection === 'assets' && !assetsInfo && !assetsBusy) assetsFetch(false);
   }
@@ -2135,10 +2890,46 @@
 
   function panelInput(event) {
     var el = event.target;
-    if (!el || el.id !== 'cv-idle-search') return;
-    idleFilter = String(el.value || '').trim();
-    var list = document.getElementById('cv-idle-list');
-    if (list) list.innerHTML = idleListHTML();
+    if (!el) return;
+    if (el.id === 'cv-idle-search') {
+      idleFilter = String(el.value || '').trim();
+      var list = document.getElementById('cv-idle-list');
+      if (list) list.innerHTML = idleListHTML();
+      return;
+    }
+    var act = el.getAttribute ? el.getAttribute('data-act') : null;
+    if (act === 'interval') {
+      // 和音量滑杆一样：拖到哪儿就生效到哪儿，不重建面板（否则松手那一下面板会跳）
+      intervalSec = clampInterval(el.value);
+      writeLocalPrefs();
+      scheduleWhisper(intervalMs());
+      var intVal = document.getElementById('cv-int-val');
+      if (intVal) intVal.textContent = intervalSec + ' ' + panelTr('秒');
+      return;
+    }
+    if (act === 'volume') {
+      // 拖动过程中就生效（不重渲染面板，否则滑杆会在拖到一半被重建、手一松就跳回去）
+      var pct = Number(el.value);
+      if (!isFinite(pct)) return;
+      pct = Math.min(100, Math.max(0, pct));
+      volumePref = pct / 100;
+      if (pct > 0) mutedPref = false;
+      saveVolumePrefs();
+      applyVolume();
+      var val = document.getElementById('cv-vol-val');
+      if (val) val.textContent = volumeLabel();
+      return;
+    }
+    if (act === 'quiet-start' || act === 'quiet-end') {
+      var m = parseHhmm(el.value);
+      if (m === null) return;
+      if (act === 'quiet-start') quietPref.start = m;
+      else quietPref.end = m;
+      saveQuietPrefs();
+      var note = document.getElementById('cv-quiet-val');
+      if (note) note.textContent = quietLabel();
+      return;
+    }
   }
 
   function panelClick(event) {
@@ -2159,7 +2950,21 @@
       renderPanel();
       return;
     }
+    if (act === 'mute') {
+      mutedPref = !mutedPref;
+      saveVolumePrefs();
+      applyVolume();
+      renderPanel();
+      return;
+    }
+    if (act === 'quiet') {
+      quietPref.on = !quietPref.on;
+      saveQuietPrefs();
+      renderPanel();
+      return;
+    }
     if (act === 'interval') {
+      if (clampInterval(el.value) === intervalSec) return; // 拖动时已经处理过，别白重建一次
       intervalSec = clampInterval(el.value);
       writeLocalPrefs();
       scheduleWhisper(intervalMs());
@@ -2171,6 +2976,7 @@
       var code = normLang(el.getAttribute('data-v'), 'zh');
       if (kind === 'voice') voiceLang = code;
       else if (kind === 'sub') subLang = code;
+      else if (kind === 'panel') panelLang = normPanelLang(el.getAttribute('data-v'), '');
       else menuLang = code;
       writeLocalPrefs();
       renderPanel();
@@ -2394,9 +3200,9 @@
   }
 
   function openSettingsOverlay(section) {
-    panelSection = section === 'lang' || section === 'scale' || section === 'idle' || section === 'assets' ? section : 'voice';
+    panelSection = section === 'lang' || section === 'scale' || section === 'idle' || section === 'assets' || section === 'volume' || section === 'quiet' ? section : 'voice';
     ensurePanelStyles();
-    if (panelEl) { renderPanel(); return; }
+    if (panelEl) { panelJumpSection = true; renderPanel(); return; }
     panelEl = document.createElement('div');
     panelEl.id = PANEL_ID;
     panelEl.addEventListener('mousedown', function (event) {
@@ -2404,14 +3210,16 @@
     });
     panelEl.innerHTML = [
       '<div class="cv-card">',
-      '<div class="cv-head"><span class="cv-title">哥伦比娅 · 设置<i>右键桌宠可再次打开</i></span>',
+      '<div class="cv-head"><span class="cv-title">' + panelTr('哥伦比娅 · 设置') + '<i>' + panelTr('右键桌宠可再次打开') + '</i></span>',
       '<button class="cv-x" data-act="close" aria-label="关闭">×</button></div>',
       '<div class="cv-body" id="cv-body"></div>',
-      '<div class="cv-foot">改动即时生效 · 只记在本机偏好里</div>',
+      '<div class="cv-foot">' + panelTr('改动即时生效 · 只记在本机偏好里') + '</div>',
       '</div>',
     ].join('');
     panelEl.addEventListener('click', panelClick);
     panelEl.addEventListener('input', panelInput);
+    // type=time 在部分路径下只发 change（不发 input），两个都接上才不会漏掉用户改的时段
+    panelEl.addEventListener('change', panelInput);
     document.body.appendChild(panelEl);
     renderPanel();
     function onKey(ev) {
@@ -2460,7 +3268,7 @@
    * 内置面板不依赖任何宿主，主题装没装都能开。
    */
   function openSettingsPanel(section) {
-    var target = section === 'lang' || section === 'scale' || section === 'whisper' || section === 'idle' || section === 'assets' ? section : 'voice';
+    var target = section === 'lang' || section === 'scale' || section === 'whisper' || section === 'idle' || section === 'assets' || section === 'volume' || section === 'quiet' ? section : 'voice';
     try {
       openSettingsOverlay(target);
       return true;
@@ -2510,9 +3318,16 @@
         var pair = group[1][k];
         var line = lineList[pair[1]];
         if (!line) continue;
+        /* 台词标题（pair[0]）只有中文一份，但 TITLE_I18N 里有对应的日文/英文标题；
+         * 菜单里照中文那套「标题 + 正文摘要」显示，才好分辨是哪一句。 */
+        /* 摘要跟随菜单语言：中文菜单用字幕语言（中文正文），日文/英文菜单用本语言正文，
+         * 否则菜单切到日英后右边那行提示仍是中文。 */
+        var menuBodyLang = menuLang === 'zh' ? subLang : menuLang;
+        var textHint = truncateText(lineTextOf(line, menuBodyLang), menuLang === 'zh' ? 11 : 14);
+        var titleText = trText(pair[0], menuLang);
         items.push({
-          label: pair[0],
-          hint: (function (t) { return t.length > 11 ? t.slice(0, 11) + '…' : t; })(lineTextOf(line, subLang)),
+          label: titleText === pair[0] ? truncateText(lineTextOf(line, menuBodyLang), 16) : titleText,
+          hint: textHint,
           action: 'columbina-line',
           __columbinaLine: pair[1],
         });
@@ -2527,11 +3342,13 @@
   function buildPowerBranch() {
     return {
       label: '省电模式',
-      hint: powerPref ? '开 · 闲着 30 秒后暂停待机动图' : '关 · 一直播',
+      hint: powerPref
+        ? trText('开') + ' · ' + trText('闲着 30 秒后暂停待机动图')
+        : trText('关') + ' · ' + trText('一直播'),
       children: [
         {
           label: powerPref ? '关闭省电' : '开启省电',
-          hint: powerPref ? '动画照常播' : '定格待机动图，省 CPU / 电量',
+          hint: powerPref ? trText('动画照常播') : trText('定格待机动图，省 CPU / 电量'),
           action: 'columbina-power',
           __columbinaPowerToggle: true,
         },
@@ -2561,9 +3378,12 @@
       ['custom', '自己选…', picks.length ? ('已选 ' + picks.length + ' 段') : '在下面逐个勾'],
     ];
     var children = modes.map(function (m) {
+      var hintText = m[0] === 'all' ? fmtText('共 {n} 段，剧情动作也会出现', pool.length)
+        : m[0] === 'custom' ? (picks.length ? fmtText('已选 {n} 段', picks.length) : trText('在下面逐个勾'))
+        : trText(m[2]);
       return {
         label: m[1],
-        hint: (idlePref.mode === m[0] ? '当前 · ' : '') + m[2],
+        hint: (idlePref.mode === m[0] ? trText('当前') + ' · ' : '') + hintText,
         action: 'columbina-idle',
         __columbinaIdleMode: m[0],
       };
@@ -2588,11 +3408,11 @@
     ];
     return {
       label: '夜间勿扰',
-      hint: quietPref.on ? '开 · ' + quietText() : '关',
+      hint: quietPref.on ? trText('开') + ' · ' + quietText() : trText('关'),
       children: [
         {
           label: quietPref.on ? '关闭勿扰' : '开启勿扰',
-          hint: quietPref.on ? '现在会说话' : '这段时间不主动开口',
+          hint: quietPref.on ? trText('现在会说话') : trText('这段时间不主动开口'),
           action: 'columbina-quiet',
           __columbinaQuietToggle: true,
         },
@@ -2600,12 +3420,17 @@
         var current = quietPref.start === range[0] && quietPref.end === range[1];
         return {
           label: hhmmText(range[0]) + '–' + hhmmText(range[1]),
-          hint: current ? '当前' : '',
+          hint: current ? trText('当前') : '',
           action: 'columbina-quiet',
           __columbinaQuietStart: range[0],
           __columbinaQuietEnd: range[1],
         };
-      })),
+      })).concat([{
+        // 任意时段：跳进设置面板的「夜间勿扰」那一段，用两个时间输入框自己填
+        label: '自定义时段…',
+        hint: '在设置面板里填时分',
+        __columbinaOpenSettings: 'quiet',
+      }]),
     };
   }
 
@@ -2614,22 +3439,27 @@
     var choices = [0.2, 0.4, 0.6, 0.8, 1];
     return {
       label: '音量',
-      hint: mutedPref ? '静音' : Math.round(volumePref * 100) + '%',
+      hint: mutedPref ? trText('静音') : Math.round(volumePref * 100) + '%',
       children: [
         {
-          label: mutedPref ? '静音：开' : '静音：关',
-          hint: '点一下切换',
+          label: mutedPref ? trText('静音：开') : trText('静音：关'),
+          hint: trText('点一下切换'),
           action: 'columbina-volume',
           __columbinaMute: true,
         },
       ].concat(choices.map(function (value) {
         return {
           label: Math.round(value * 100) + '%',
-          hint: (!mutedPref && Math.abs(value - volumePref) < 0.001) ? '当前' : '',
+          hint: (!mutedPref && Math.abs(value - volumePref) < 0.001) ? trText('当前') : '',
           action: 'columbina-volume',
           __columbinaVolume: value,
         };
-      })),
+      })).concat([{
+        // 0–100% 任意值：跳进设置面板的「音量」那一段，用滑杆自己拖
+        label: '自定义音量…',
+        hint: '在设置面板里拖 0~100%',
+        __columbinaOpenSettings: 'volume',
+      }]),
     };
   }
 
@@ -2643,18 +3473,18 @@
       hint: '开关 / 间隔 / 选台词',
       children: [
         {
-          label: enabled ? '碎碎念：开' : '碎碎念：关',
-          hint: '点一下切换',
+          label: trText(enabled ? '碎碎念：开' : '碎碎念：关'),
+          hint: trText('点一下切换'),
           action: 'columbina-whisper-toggle',
           __columbinaWhisperToggle: true,
         },
         {
           label: '间隔',
-          hint: clampInterval(intervalSec) + ' 秒',
+          hint: secondsText(clampInterval(intervalSec)),
           children: intervals.map(function (sec) {
             return {
-              label: sec + ' 秒',
-              hint: sec === clampInterval(intervalSec) ? '当前' : '',
+              label: secondsText(sec),
+              hint: sec === clampInterval(intervalSec) ? trText('当前') : '',
               action: 'columbina-whisper-interval',
               __columbinaInterval: sec,
             };
@@ -2910,7 +3740,8 @@
       var list = (byLabel.get(label) || []).filter(function (c) {
         return c.duration >= POOL_MIN_MS / 1000 && c.duration <= POOL_MAX_MS / 1000;
       });
-      var nice = list.filter(function (c) { return c.text.length >= 3 && c.text.length <= 26; });
+      // 碎片台词：3 字以下太像噪音（「钱」「问号」），放宽到 4 字起
+      var nice = list.filter(function (c) { return c.text.length >= 4 && c.text.length <= 26; });
       var hit = pickFrom(nice.length ? nice : list, seen);
       if (hit && hit.text !== lastText) return hit;
       bag.splice(idx, 1); // 这个标签不合适，换下一个
@@ -3027,8 +3858,9 @@
     }
     // 设置里勾了「只念选中的台词」时，碎片一律不念（否则勾选就没意义）
     var onlySelected = allowedLines !== null;
-    // 五成半念一整句台词（默认全部台词都可能被念到），其余按场合挑一段碎片
-    if (onlySelected || Math.random() < 0.55) {
+    // 官方原声整句优先：七成八念 wiki 上的正式台词，剩下两成二才用短视频里切出来的碎片
+    // （早期是 55/45，用户反馈「碎碎念被片段污染、官方原声变少了」，这里提高整句占比）
+    if (onlySelected || Math.random() < 0.78) {
       var line = pickWhisperLine(key);
       if (line) {
         lastWhisperMs = Math.round((lineDurOf(line, voiceLang) || 3) * 1000);
@@ -3107,12 +3939,13 @@
     setSkin: function (id) { return applySkin(id); },
     idleTime: function () { return idleTime(); },
     openSettings: function (section) { return openSettingsPanel(section); },
-    get lang() { return { voice: voiceLang, sub: subLang, menu: menuLang }; },
+    get lang() { return { voice: voiceLang, sub: subLang, menu: menuLang, panel: panelLang }; },
     setLang: function (kind, lang) {
       var L = normLang(lang, 'zh');
       if (kind === 'voice') voiceLang = L;
       else if (kind === 'sub') subLang = L;
       else if (kind === 'menu') menuLang = L;
+      else if (kind === 'panel') panelLang = normPanelLang(lang || '', '');
       else return window.__columbinaVoice.lang;
       writeLocalPrefs();
       return window.__columbinaVoice.lang;
@@ -3206,7 +4039,7 @@
         recent: recent.slice(-10),
         skin: skinId,
         skinName: (currentSkin() && currentSkin().name) || '',
-        lang: { voice: voiceLang, sub: subLang, menu: menuLang },
+        lang: { voice: voiceLang, sub: subLang, menu: menuLang, panel: panelLang },
         scale: scalePref,
         scene: sceneByClock(),
         nextInMs: Math.max(0, nextWhisperAt - Date.now()),

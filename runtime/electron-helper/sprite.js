@@ -1908,7 +1908,7 @@ class PetSprite {
     fetch(BASE + '/pet-display', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ id: this.pet.id, display }),
+      body: JSON.stringify({ id: this.pet.id, display, source: 'desktop-menu' }),
     }).catch((e) => {
       console.warn('[dsh-pet] 显示位置请求失败（宿主不可达？）', e);
     });
