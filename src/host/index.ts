@@ -163,9 +163,11 @@ import { composeSystemPrompt, petPersona } from './persona';
 import {
   HelperProcess,
   defaultElectronExe,
+  diag,
   electronLandingDir,
   ensureElectronDownload,
   hasGraphicalDisplay,
+  helperDisabledByEnv,
   resolveElectronPath,
 } from './helper-process';
 
@@ -953,7 +955,7 @@ export function apply(ctx: any): void {
     try {
       hasDesktopPet = effectivePetList().some((p) => isDesktopVisible(p.display));
     } catch (e) {
-      ctx.logger?.warn?.(`[dsh-pet] 宠物配置非法，桌面模式已跳过：${e instanceof Error ? e.message : String(e)}`);
+      diag(ctx.logger, 'warn', `[dsh-pet] 宠物配置非法，桌面模式已跳过：${e instanceof Error ? e.message : String(e)}`);
     }
   };
   refreshDesktop();
@@ -975,6 +977,7 @@ export function apply(ctx: any): void {
   let disposed = false;
   /** 「无图形环境」提示只在进程生命周期内打一次，避免守护循环刷屏 */
   let displayWarned = false;
+  let noHelperWarned = false;
 
   /** 用已确认存在的 Electron 路径拉起桌面 Helper（每只桌面宠物一个局部小窗口）。 */
   const launchHelper = (electronPath: string | undefined): void => {
@@ -1046,9 +1049,9 @@ export function apply(ctx: any): void {
     try {
       helper.start();
       desktopModeEverActive = true; // 此后即使桌面宠物清零也保留 Helper：托盘常驻，可随时切回来
-      ctx.logger?.info?.(`dsh-pet desktop helper started (config: ${configUrl})`);
+      diag(ctx.logger, 'info', `dsh-pet desktop helper started (config: ${configUrl})`);
     } catch (e) {
-      ctx.logger?.warn?.(`dsh-pet desktop helper start failed: ${e instanceof Error ? e.message : String(e)}`);
+      diag(ctx.logger, 'warn', `dsh-pet desktop helper start failed: ${e instanceof Error ? e.message : String(e)}`);
       helper = undefined;
     }
   };
@@ -1056,6 +1059,18 @@ export function apply(ctx: any): void {
   /** 拉起桌面 Helper：先探测本机 Electron；缺失时进程内异步下载
    *  （不 spawn 子进程，CLI node 与 DSH Desktop 均适用），下载完成后自动拉起。 */
   const startHelper = (): void => {
+    // 逃生开关：DSH_PET_NO_HELPER=1 时完全不碰 Electron（排障 / 无窗口环境用）。
+    if (helperDisabledByEnv()) {
+      if (!noHelperWarned) {
+        noHelperWarned = true;
+        diag(
+          ctx.logger,
+          'info',
+          '[dsh-pet] DSH_PET_NO_HELPER=1：已跳过桌面宠物（不做 Electron 探测与下载）；浏览器内宠物不受影响。',
+        );
+      }
+      return;
+    }
     if (helper || electronEnsure || disposed) return;
     if (!hasDesktopPet && !desktopModeEverActive) return; // 无桌面宠物且桌面模式从未启用过：不启动
     // 无图形显示环境（Linux 服务器 / 容器）：直接放弃，不探测、不下载、不拉起。
@@ -1063,7 +1078,9 @@ export function apply(ctx: any): void {
     if (!hasGraphicalDisplay()) {
       if (!displayWarned) {
         displayWarned = true;
-        ctx.logger?.warn?.(
+        diag(
+          ctx.logger,
+          'warn',
           '[dsh-pet] 未检测到图形显示环境（DISPLAY/WAYLAND_DISPLAY 均为空），已跳过桌面宠物。' +
             '浏览器内宠物不受影响；如需在服务器上启用桌面模式，请配置 Xvfb 后设置 DSH_PET_DESKTOP_FORCE=1。',
         );
@@ -1129,7 +1146,7 @@ export function apply(ctx: any): void {
         startHelper();
       })
       .catch((e: unknown) => {
-        ctx.logger?.warn?.(`[dsh-pet] 重启桌面 Helper 失败：${e instanceof Error ? e.message : String(e)}`);
+        diag(ctx.logger, 'warn', `[dsh-pet] 重启桌面 Helper 失败：${e instanceof Error ? e.message : String(e)}`);
       });
     return desktopSyncQueue;
   };

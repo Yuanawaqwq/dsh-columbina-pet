@@ -12,7 +12,7 @@
 import { test, describe, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter, once } from 'node:events';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -20,10 +20,13 @@ import {
   HELPER_STABLE_MS,
   HELPER_STOP_GRACE_MS,
   HelperProcess,
+  diag,
+  diagLogPath,
   dshHomeDir,
   defaultElectronExe,
   ensureElectronDownload,
   hasGraphicalDisplay,
+  helperDisabledByEnv,
   helperRunIsStable,
   helperSpawnEnv,
   restartBackoffDelayMs,
@@ -49,6 +52,24 @@ test('Electron 安装目录无法创建时返回 undefined，不产生未处理�
   assert.ok(warnings.some((message) => message.includes('ensure failed:')));
   assert.ok(warnings.some((message) => message.includes('DSH_PET_ELECTRON_PATH')));
 });
+
+/**
+ * 造一个「看起来像 Electron 可执行文件」的假文件：体积 >1MB，win32 上还带合法 PE 头。
+ * resolveElectronPath 现在不只看存在性（见 electronBinaryUsable）：空文件 / 小文件 /
+ * win32 上的 DLL 都会被跳过，所以测试里必须写像样的内容。
+ */
+function writeFakeElectron(file: string, opts: { size?: number; dll?: boolean; pe?: boolean } = {}): void {
+  const size = opts.size ?? 1_048_576 + 4096;
+  const buf = Buffer.alloc(size);
+  if (process.platform === 'win32' && opts.pe !== false) {
+    buf.writeUInt16LE(0x4d5a, 0); // 'MZ'
+    const peOffset = 0xf8;
+    buf.writeUInt32LE(peOffset, 0x3c); // e_lfanew
+    buf.writeUInt32LE(0x00004550, peOffset); // 'PE\0\0'
+    buf.writeUInt16LE(opts.dll ? 0x2000 : 0x0022, peOffset + 22); // Characteristics
+  }
+  writeFileSync(file, buf);
+}
 
 /** 建一个隔离的临时目录,并归还原 DSH_HOME / DSH_PET_ELECTRON_PATH 环境变量 */
 function withIsolatedHome(fn: (dir: string) => void): void {
@@ -104,9 +125,9 @@ describe('resolveElectronPath —— 候选优先级', () => {
   test('显式候选命中时直接返回（不读环境变量）', () => {
     withIsolatedHome((dir) => {
       const fake = join(dir, 'fake-electron.exe');
-      writeFileSync(fake, '');
+      writeFakeElectron(fake);
       const other = join(dir, 'other-electron.exe');
-      writeFileSync(other, '');
+      writeFakeElectron(other);
       assert.equal(resolveElectronPath([fake, other]), fake);
     });
   });
@@ -114,7 +135,7 @@ describe('resolveElectronPath —— 候选优先级', () => {
   test('候选顺序：第一个存在的胜出', () => {
     withIsolatedHome((dir) => {
       const fake = join(dir, 'fake-electron.exe');
-      writeFileSync(fake, '');
+      writeFakeElectron(fake);
       assert.equal(resolveElectronPath([join(dir, 'missing.exe'), fake]), fake);
     });
   });
@@ -122,9 +143,41 @@ describe('resolveElectronPath —— 候选优先级', () => {
   test('DSH_PET_ELECTRON_PATH 环境变量参与候选（在显式候选之后）', () => {
     withIsolatedHome((dir) => {
       const viaEnv = join(dir, 'env-electron.exe');
-      writeFileSync(viaEnv, '');
+      writeFakeElectron(viaEnv);
       process.env.DSH_PET_ELECTRON_PATH = viaEnv;
       assert.equal(resolveElectronPath([]), viaEnv);
+    });
+  });
+
+  test('体积不过关的候选被跳过（空文件 / 占位小文件）', () => {
+    withIsolatedHome((dir) => {
+      const tiny = join(dir, 'tiny-electron.exe');
+      writeFileSync(tiny, 'placeholder');
+      const good = join(dir, 'good-electron.exe');
+      writeFakeElectron(good);
+      assert.equal(resolveElectronPath([tiny, good]), good);
+      assert.equal(resolveElectronPath([tiny]), undefined);
+    });
+  });
+
+  test('win32 上 DLL 头被跳过（改名 DLL 伪装 exe 的经典事故）', () => {
+    if (process.platform !== 'win32') return;
+    withIsolatedHome((dir) => {
+      const dll = join(dir, 'renamed.dll.exe');
+      writeFakeElectron(dll, { dll: true });
+      const good = join(dir, 'good-electron.exe');
+      writeFakeElectron(good);
+      assert.equal(resolveElectronPath([dll, good]), good);
+      assert.equal(resolveElectronPath([dll]), undefined);
+    });
+  });
+
+  test('非 PE / 头部损坏的文件被跳过', () => {
+    if (process.platform !== 'win32') return;
+    withIsolatedHome((dir) => {
+      const bad = join(dir, 'bad-electron.exe');
+      writeFakeElectron(bad, { pe: false });
+      assert.equal(resolveElectronPath([bad]), undefined);
     });
   });
 
@@ -137,7 +190,7 @@ describe('resolveElectronPath —— 候选优先级', () => {
   test('候选去重：重复路径只保留一次（结果仍能命中）', () => {
     withIsolatedHome((dir) => {
       const fake = join(dir, 'fake-electron.exe');
-      writeFileSync(fake, '');
+      writeFakeElectron(fake);
       assert.equal(resolveElectronPath([fake, fake, join(dir, 'missing.exe')]), fake);
     });
   });
@@ -145,7 +198,7 @@ describe('resolveElectronPath —— 候选优先级', () => {
   test('空字符串 / null 候选被跳过', () => {
     withIsolatedHome((dir) => {
       const fake = join(dir, 'fake-electron.exe');
-      writeFileSync(fake, '');
+      writeFakeElectron(fake);
       assert.equal(resolveElectronPath(['', undefined, fake] as Array<string | undefined>), fake);
     });
   });
@@ -161,9 +214,19 @@ describe('resolveElectronPath —— 候选优先级', () => {
             : 'electron';
       const landed = join(dir, 'dshhome', 'electron', rel);
       mkdirSync(dirname(landed), { recursive: true });
-      writeFileSync(landed, '');
+      writeFakeElectron(landed);
       assert.equal(resolveElectronPath([]), landed);
     });
+  });
+});
+
+describe('helperDisabledByEnv —— DSH_PET_NO_HELPER 逃生开关', () => {
+  test("只认 '1'，其余一律视为未开启", () => {
+    assert.equal(helperDisabledByEnv({ DSH_PET_NO_HELPER: '1' }), true);
+    for (const value of ['0', 'true', 'yes', '', ' 1']) {
+      assert.equal(helperDisabledByEnv({ DSH_PET_NO_HELPER: value }), false);
+    }
+    assert.equal(helperDisabledByEnv({}), false);
   });
 });
 
@@ -466,4 +529,28 @@ describe('HelperProcess failed spawn recovery', () => {
       },
     );
   }
+});
+
+test('diag 只在设置了 DSH_PET_DIAG_LOG 时落盘', (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'dsh-pet-diag-'));
+  const file = join(dir, 'diag.log');
+  const saved = process.env.DSH_PET_DIAG_LOG;
+  t.after(() => {
+    if (saved === undefined) delete process.env.DSH_PET_DIAG_LOG;
+    else process.env.DSH_PET_DIAG_LOG = saved;
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  delete process.env.DSH_PET_DIAG_LOG;
+  assert.equal(diagLogPath(), undefined);
+  diag({}, 'warn', '不落盘');
+  assert.equal(existsSync(file), false);
+
+  process.env.DSH_PET_DIAG_LOG = file;
+  assert.equal(diagLogPath(), file);
+  diag({}, 'warn', '落盘一');
+  diag({}, 'error', '落盘二');
+  const text = readFileSync(file, 'utf8');
+  assert.match(text, /\[warn\] 落盘一/);
+  assert.match(text, /\[error\] 落盘二/);
 });

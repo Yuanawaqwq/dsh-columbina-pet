@@ -52,6 +52,16 @@
 
 > 逐版本明细见 [CHANGELOG.md](./CHANGELOG.md)；可下载的包见 [Releases](https://github.com/Yuanawaqwq/dsh-columbina-pet/releases)。每个版本都会在这里留一段，说明**改了什么、要不要动设置**。
 
+### 1.2.4 · 2026-11-16
+
+> 这一版**不动形象、不动台词、不加新功能**，只做一件事：她起不来的时候，让原因看得见。**不需要动任何设置**；升级后同样请**完整退出 DSH 再打开**。
+
+- **根因：日志一直在写，只是写进了没人看的地方**：DSH 0.2.2-rc.3 的 `ctx.logger` 是 pino 风格的采集器——`info / warn / error` 方法都在，消息却只进它自己的缓冲，**不进终端**。桌面 App 又把宿主的 stdout 直接 pipe 给 GUI 进程、没有接收方。于是「桌面宠物起不来」在宿主里是**零痕迹**：没有报错、没有 `launch-error.json`、任务管理器里也没有 `electron.exe`。现在所有诊断先直出 `console`，再转给宿主 logger，两边各自兜底。
+- **给没有终端的宿主留一份日志（可选）**：设 `DSH_PET_DIAG_LOG=<路径>` 后，诊断同时追加进文件（`ISO 时间 [级别] 消息`，超过 2 MB 轮转成 `.1`）。不设就不写诊断日志。桌面 App 里要看日志，就靠它。
+- **假的 / 残缺的 Electron 不再被当成可用**：以前只校验「是文件且大于 1 MB」，改名的大文件或更新到一半的 exe 都能骗过校验，然后 spawn 必然失败。现在再验 PE 头（`MZ` → `PE\0\0`、且不是 DLL；**仅 Windows**，macOS / Linux 的产物格式不同，保持原来的宽松判定），骗不过去了。
+- **启动失败会留下 `launch-error.json`**：helper `spawn` 失败时写 `{stage: "helper-spawn", command, message}`，和「Electron 下载失败」那份同目录、同格式。
+- **不想让她起桌面窗口时：`DSH_PET_NO_HELPER=1`**：跳过 Electron 探测与下载，只打一行提示，浏览器里的宠物照常。排查「是不是 helper 拖累了宿主」时很有用。
+
 ### 1.2.3 · 2026-11-16
 
 > 这一版**不加新角色、不改台词**，修的是「她把自己藏起来之后你就找不到她了」这一件事，顺手把音量与夜间勿扰做成任意值。**不需要动任何设置**；升级后请**完整退出 DSH 再打开**（宿主半边也改了）。
@@ -253,7 +263,7 @@
   npm test        # test/ 下全部用例：零依赖、纯内置模块、不联网
   ```
 
-- 11 个用例文件、212 条断言，都是自己搭的假 DOM / 假时钟 / 假音频：请求体编码 19、客户端启动守卫 9、跨站写 16、字典覆盖 8、菜单树三语 7、面板文案 27、Range 24、面板交互 32、两端对齐 36、字幕跟音频 15、碎碎念 19。CI 在 `.github/workflows/ci.yml`（仓库内，不随 npm 包发布）里用 Node 22 与 24 各跑一遍。
+- 12 个用例文件、239 条断言，都是自己搭的假 DOM / 假时钟 / 假音频：请求体编码 19、客户端启动守卫 9、跨站写 16、字典覆盖 8、菜单树三语 7、面板文案 27、Range 24、面板交互 32、两端对齐 36、字幕跟音频 15、碎碎念 19、诊断与二进制校验 27。CI 在 `.github/workflows/ci.yml`（仓库内，不随 npm 包发布）里用 Node 22 与 24 各跑一遍。
 - 发版前另跑 `node scripts/check-voice-asset.mjs`：语音包是外置资产，提前确认线上还在。
 
 ## 包体积：为什么这么大、怎么变小
@@ -317,7 +327,7 @@ FFMPEG=/path/to/ffmpeg node scripts/shrink-webm.mjs --crf 30 --backup D:/backup/
 
 > ℹ️ **可以与上游 `dsh-pet` 并存**（1.0.4 起）：本插件的路由前缀、bridge scheme、用户目录、会话身份都已迁到 `dsh-columbina-pet*` 命名空间，不再和上游抢 `/dsh-pet-7340`。为兼容旧书签仍会尝试注册旧前缀，旧前缀被上游占用时静默跳过。
 
-> 📦 **第一次安装会等一会儿**：包里有四套 2D live 形象的动作视频，tarball 约 148 MB（解开约 212 MB）。从 GitHub 或 npm 拉取慢几分钟是正常的，中途别取消；装完还要**完整退出 DSH 再打开**，桌宠才会换上新代码。
+> 📦 **第一次安装会等一会儿**：包里有四套 2D live 形象的动作视频，tarball 约 148 MB（解开约 161 MB）。从 GitHub 或 npm 拉取慢几分钟是正常的，中途别取消；装完还要**完整退出 DSH 再打开**，桌宠才会换上新代码。
 
 ### 通过 DSH 插件管理安装（推荐）
 
@@ -363,11 +373,11 @@ npm install dsh-columbina-pet
 
 **完整退出 DSH 再打开**（关窗口、刷新页面都不算重启）。
 
-### 从 npm 安装（1.2.2）
+### 从 npm 安装（1.2.4）
 
 ```bash
 cd ~/.dsh/profiles/<你的 profile>
-npm install dsh-columbina-pet@1.2.2
+npm install dsh-columbina-pet@1.2.4
 ```
 
 装完同样把 `dsh-columbina-pet` 加进 profile 的 `dsh.profile.bundles`，然后**完整退出 DSH 再打开**。
@@ -388,7 +398,7 @@ npm install file:C:\path\to\dsh-columbina-pet
 npm install file:/path/to/dsh-columbina-pet
 ```
 
-> 说明：仓库自带约 147 MB 的 2D 形象动作素材（语音包外置、不在仓库里；形象沿用 1.1.11 的原始素材，不做有损压缩），npm 包 tarball 约 148 MB、解包 161 MB。想自己瘦身可以跑 `node scripts/shrink-webm.mjs`：VP9+alpha 重编码，crf 24 实测 143.4 MB → 87.3 MB，首帧 RGB 平均差 0.5/255、透明边缘最大差 4/255，肉眼看不出差别。国内直连 registry 可能较慢；网络不好时优先走 GitHub 或 Release 附件，或按下面的镜像写法加速。
+> 说明：仓库自带约 147 MB 的 2D 形象动作素材（语音包外置、不在仓库里；形象沿用 1.1.11 的原始素材，不做有损压缩），npm 包 tarball 约 148 MB、解开约 161 MB。想自己瘦身可以跑 `node scripts/shrink-webm.mjs`：VP9+alpha 重编码，crf 24 实测 143.4 MB → 87.3 MB，首帧 RGB 平均差 0.5/255、透明边缘最大差 4/255，肉眼看不出差别。国内直连 registry 可能较慢；网络不好时优先走 GitHub 或 Release 附件，或按下面的镜像写法加速。
 
 ### 国内网络加速（可选）
 
@@ -444,6 +454,26 @@ curl http://127.0.0.1:<DSH 端口>/dsh-columbina-pet-7340/healthz
 
 另有一个不用访问 URL 的旁证：`~/.dsh/columbina-pet/activation.json` 记录最近一次激活的时间、版本、`buildSha256`、`activatedBuildSha256`，以及磁盘版本与运行版本是否不一致（`needsRestart`）。
 
+### 诊断日志（可选，1.2.4+）
+
+桌面 App 是 GUI 进程，宿主的 console 输出没有接收方——出问题时屏幕上往往「什么都没有」。设一个环境变量，就能把这些诊断留下：
+
+```powershell
+$env:DSH_PET_DIAG_LOG = "$env:USERPROFILE\.dsh\columbina-pet\diag.log"
+```
+
+重启 DSH 之后，`~/.dsh/columbina-pet/diag.log` 里是带 ISO 时间与级别的行：
+
+```
+2026-11-16T11:09:30.716Z [info] [dsh-pet] activated 1.2.4 build d7390e0b
+2026-11-16T11:09:30.759Z [info] dsh-pet desktop helper started (config: http://127.0.0.1:<端口>/dsh-columbina-pet-7340/config)
+```
+
+- 超过 2 MB 自动轮转成 `diag.log.1`，不会无限长。
+- 不设这个变量时，插件**不写诊断日志**（`activation.json` 之类的既有文件照旧）。
+- 环境变量要在**启动 DSH 的那个 shell / 快捷方式**里设，设完完整退出再打开（宿主子进程继承的是启动时的环境）。
+- 只想排除 helper：加 `DSH_PET_NO_HELPER=1`，宿主会跳过 Electron 探测与下载，只跑网页端，并打一行提示。
+
 ### 第一次启动
 
 首次使用需要 Electron 运行时（约 100 MB，从 npmmirror 下载，可用环境变量换源）：
@@ -478,7 +508,7 @@ node node_modules/dsh-columbina-pet/scripts/ensure-electron.mjs
 
 ### 第一次安装很慢、像卡住了
 
-- tarball 约 148 MB（解开约 212 MB），慢几分钟是正常的，**别中途取消**——取消会留下半个 `node_modules`。
+- tarball 约 148 MB（解开约 161 MB），慢几分钟是正常的，**别中途取消**——取消会留下半个 `node_modules`。
 - 磁盘至少留 400 MB；代理/公司网可能拦 npm registry。
 - 真卡死：删掉 `node_modules/dsh-columbina-pet` 再装一次即可（其它依赖不用动）。
 
@@ -486,7 +516,7 @@ node node_modules/dsh-columbina-pet/scripts/ensure-electron.mjs
 
 - **先排除「显示位置被设成都不」（1.2.3 起好查了）**：`curl http://127.0.0.1:<端口>/dsh-columbina-pet-7340/healthz` 的 `displayChanges` 会列出最近 10 次 display 改动（时间 / 宠物 / 从 → 到 / 来源），完整记录在 `~/.dsh/columbina-pet/display-changes.ndjson`。如果最后一条是 `→ none`，打开「设置 → 哥伦比娅」，顶部会有一条警示条，点「恢复为仅桌面」就回来。
 - **网页模式**：先刷新页面（Ctrl+R），再看控制台有没有 `[dsh-pet]` 的挂载日志。
-- **桌面模式**：她是**独立的透明窗口**，可能被拖到屏幕边缘之外、落在副屏、或者被全屏应用压住。看 `helperRunning`，再看任务管理器里有没有 `electron.exe`。
+- **桌面模式**：她是**独立的透明窗口**，可能被拖到屏幕边缘之外、落在副屏、或者被全屏应用压住。看 `helperRunning`，再看任务管理器里有没有 `electron.exe`。要是两者都没有：先看 `~/.dsh/columbina-pet/launch-error.json`（1.2.4+ 记失败阶段），想看得更细就设 `DSH_PET_DIAG_LOG` 完整退出再打开一次（见上面「诊断日志」）。
 - 全屏游戏 / 演示模式下系统会压住置顶窗口，退出全屏再试。
 - 改过多显示器或分辨率后位置可能越界：把 `main-config.jsonc` 里 `pets[]` 的 `position` 删掉，回默认位置。
 

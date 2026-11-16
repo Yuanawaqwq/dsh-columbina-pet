@@ -52,6 +52,16 @@ Let me put the expectations up front:
 
 > Version-by-version details live in [CHANGELOG.md](./CHANGELOG.md); downloadable packages are on [Releases](https://github.com/Yuanawaqwq/dsh-columbina-pet/releases). Every release gets a section here explaining **what changed and whether you need to touch your settings**.
 
+### 1.2.4 · 2026-11-16
+
+> This release **does not touch sprites, voice lines or add features**; it does one thing — when she fails to start, the reason becomes visible. **No settings to change**; as always, **quit DSH completely and start it again** after upgrading.
+
+- **Root cause: the logs were there, just written where nobody reads them.** In DSH 0.2.2-rc.3 `ctx.logger` is a pino-style collector — `info / warn / error` all exist, but messages only go into its own buffer and **never reach the terminal**. The desktop app then pipes the host's stdout straight into a GUI process that has no receiver. So "the desktop pet will not start" left **zero trace**: no error, no `launch-error.json`, no `electron.exe` in Task Manager. Diagnostics now go to `console` first and are forwarded to the host logger second, each side wrapped in its own `try/catch`.
+- **A log file for hosts without a terminal (optional):** set `DSH_PET_DIAG_LOG=<path>` and diagnostics are also appended to that file (`ISO time [level] message`, rotated to `.1` past 2 MB). Without the variable the plugin writes no diagnostic log.
+- **Fake or truncated Electron binaries are no longer accepted:** the old check only required "a file larger than 1 MB", so a renamed big file — or a half-updated exe — passed and then failed to spawn. It now also verifies the PE header (`MZ` → `PE\0\0`, and not a DLL; **Windows only** — macOS/Linux builds use other formats and keep the old permissive check).
+- **`launch-error.json` on startup failure:** a failed helper `spawn` now writes `{stage: "helper-spawn", command, message}`, same directory and shape as the existing download-failure file.
+- **`DSH_PET_NO_HELPER=1`** skips Electron detection and download entirely (web-side pet still works) and prints a single line — handy to check whether the helper is what is bothering the host.
+
 ### 1.2.3 · 2026-11-16
 
 > This release **adds no new character and changes no lines**. It fixes one thing — "after she hides herself you can no longer find her" — and, while at it, lets volume and Do Not Disturb take arbitrary values. **No setting changes are needed**; after upgrading, please **quit DSH completely and start it again** (the host half changed too).
@@ -253,7 +263,7 @@ Everything here is reachable from the **context menu** or the **settings panel**
   npm test        # every case under test/: zero dependencies, built-ins only, no network
   ```
 
-- **11 case files, 212 assertions**, all with a self-built fake DOM / fake clock / fake audio: request-body encoding 19, client boot guard 9, cross-site writes 16, dictionary coverage 8, trilingual menu tree 7, panel copy 27, Range 24, panel interaction 32, web/desktop parity 36, subtitles following audio 15, chatter 19. CI runs them on Node 22 and on 24 (`.github/workflows/ci.yml`, repo-only, not shipped in the npm package).
+- **12 case files, 239 assertions**, all with a self-built fake DOM / fake clock / fake audio: request-body encoding 19, client boot guard 9, cross-site writes 16, dictionary coverage 8, trilingual menu tree 7, panel copy 27, Range 24, panel interaction 32, web/desktop parity 36, subtitles following audio 15, chatter 19, diagnostics and binary validation 27. CI runs them on Node 22 and on 24 (`.github/workflows/ci.yml`, repo-only, not shipped in the npm package).
 - Before a release, also run `node scripts/check-voice-asset.mjs`: the voice pack is an external asset, so confirm in advance that it is still online.
 
 ## Package size: why it is this big, and how to shrink it
@@ -317,7 +327,7 @@ The host supports an external asset root at `~/.dsh/columbina-pet/assets`: a fil
 
 > ℹ️ **It can coexist with upstream `dsh-pet`** (since 1.0.4): this plugin's route prefix, bridge scheme, user directory and session identity have all moved into the `dsh-columbina-pet*` namespace, so it no longer competes with upstream for `/dsh-pet-7340`. For compatibility with old bookmarks it still tries to register the old prefix, and silently skips it when upstream has claimed it.
 
-> 📦 **The first install takes a while**: the package contains the animation videos of four 2D live sprite sets, and the tarball is about 148 MB (about 212 MB unpacked). Taking a few minutes to pull from GitHub or npm is normal, so do not cancel midway; after installing you still have to **quit DSH completely and start it again** before the pet runs the new code.
+> 📦 **The first install takes a while**: the package contains the animation videos of four 2D live sprite sets, and the tarball is about 148 MB (about 161 MB unpacked). Taking a few minutes to pull from GitHub or npm is normal, so do not cancel midway; after installing you still have to **quit DSH completely and start it again** before the pet runs the new code.
 
 ### Install through the DSH plugin manager (recommended)
 
@@ -363,11 +373,11 @@ Then add it to the profile's `package.json`:
 
 **Quit DSH completely and start it again** (closing the window or refreshing the page does not count as a restart).
 
-### Install from npm (1.2.2)
+### Install from npm (1.2.4)
 
 ```bash
 cd ~/.dsh/profiles/<你的 profile>
-npm install dsh-columbina-pet@1.2.2
+npm install dsh-columbina-pet@1.2.4
 ```
 
 Once it is installed, add `dsh-columbina-pet` to the profile's `dsh.profile.bundles` the same way, then **quit DSH completely and open it again**.
@@ -388,7 +398,7 @@ npm install file:C:\path\to\dsh-columbina-pet
 npm install file:/path/to/dsh-columbina-pet
 ```
 
-> Note: the repository ships about 147 MB of 2D sprite-set motion assets (the voice pack is external and is not in the repo; the sprites still use the original 1.1.11 assets with no lossy compression), the npm tarball is about 148 MB and 161 MB unpacked. If you want to slim it down yourself, run `node scripts/shrink-webm.mjs`: it re-encodes to VP9+alpha, and at crf 24 we measured 143.4 MB → 87.3 MB, with a mean first-frame RGB difference of 0.5/255 and a maximum transparent-edge difference of 4/255 — you cannot see the difference. A direct connection to the registry can be slow from mainland China; when the network is poor, prefer GitHub or the Release attachments, or use the mirror recipe below to speed things up.
+> Note: the repository ships about 147 MB of 2D sprite-set motion assets (the voice pack is external and is not in the repo; the sprites still use the original 1.1.11 assets with no lossy compression), the npm tarball is about 148 MB and about 161 MB unpacked. If you want to slim it down yourself, run `node scripts/shrink-webm.mjs`: it re-encodes to VP9+alpha, and at crf 24 we measured 143.4 MB → 87.3 MB, with a mean first-frame RGB difference of 0.5/255 and a maximum transparent-edge difference of 4/255 — you cannot see the difference. A direct connection to the registry can be slow from mainland China; when the network is poor, prefer GitHub or the Release attachments, or use the mirror recipe below to speed things up.
 
 ### Faster networking in mainland China (optional)
 
@@ -444,6 +454,26 @@ When `assetRoots.externalActive` is `true` and `externalFileCount > 0`, external
 
 There is also corroborating evidence that needs no URL: `~/.dsh/columbina-pet/activation.json` records the time, version, `buildSha256` and `activatedBuildSha256` of the most recent activation, plus whether the on-disk version differs from the running one (`needsRestart`).
 
+### Diagnostic log (optional, 1.2.4+)
+
+The desktop app is a GUI process, and the host's console output has no receiver — so when something breaks the screen often shows "nothing at all". One environment variable keeps those diagnostics around:
+
+```powershell
+$env:DSH_PET_DIAG_LOG = "$env:USERPROFILE\.dsh\columbina-pet\diag.log"
+```
+
+After restarting DSH, `~/.dsh/columbina-pet/diag.log` holds lines with an ISO timestamp and level:
+
+```
+2026-11-16T11:09:30.716Z [info] [dsh-pet] activated 1.2.4 build d7390e0b
+2026-11-16T11:09:30.759Z [info] dsh-pet desktop helper started (config: http://127.0.0.1:<port>/dsh-columbina-pet-7340/config)
+```
+
+- Rotates to `diag.log.1` past 2 MB, so it never grows without bound.
+- Without the variable the plugin **writes no diagnostic log** (existing files such as `activation.json` are unaffected).
+- Set it in the shell / shortcut that **launches DSH**, then quit and reopen: the host child inherits the environment it was started with.
+- To rule the helper out: add `DSH_PET_NO_HELPER=1` and the host skips Electron detection and download, runs the web side only, and prints a single line.
+
 ### First launch
 
 The first use needs the Electron runtime (about 100 MB, downloaded from npmmirror; environment variables can switch the source):
@@ -478,7 +508,7 @@ The port changes every time DSH starts; how to write it is covered in "Health ch
 
 ### The first install is very slow / seems stuck
 
-- The tarball is about 148 MB (about 212 MB unpacked); a few minutes is normal, **do not cancel midway** — cancelling leaves you with half a `node_modules`.
+- The tarball is about 148 MB (about 161 MB unpacked); a few minutes is normal, **do not cancel midway** — cancelling leaves you with half a `node_modules`.
 - Leave at least 400 MB of disk space; a proxy or corporate network may block the npm registry.
 - Truly stuck: delete `node_modules/dsh-columbina-pet` and install it once more (the other dependencies stay as they are).
 
@@ -486,7 +516,7 @@ The port changes every time DSH starts; how to write it is covered in "Health ch
 
 - **First rule out "display position set to nowhere" (easier to check since 1.2.3)**: `displayChanges` from `curl http://127.0.0.1:<端口>/dsh-columbina-pet-7340/healthz` lists the last 10 display changes (time / pet / from → to / source), and the full record lives in `~/.dsh/columbina-pet/display-changes.ndjson`. If the last entry is `→ none`, open "Settings → Columbina": there is a warning strip at the top, and clicking "Restore to desktop only" brings her back.
 - **Web mode**: refresh the page first (Ctrl+R), then check the console for a `[dsh-pet]` mount log.
-- **Desktop mode**: she is **a separate transparent window**, so she may have been dragged past the edge of the screen, may be on a second monitor, or may be covered by a fullscreen app. Check `helperRunning`, then check Task Manager for `electron.exe`.
+- **Desktop mode**: she is **a separate transparent window**, so she may have been dragged past the edge of the screen, may be on a second monitor, or may be covered by a fullscreen app. Check `helperRunning`, then check Task Manager for `electron.exe`. If neither exists: look at `~/.dsh/columbina-pet/launch-error.json` (1.2.4+ records the failing stage), and for more detail set `DSH_PET_DIAG_LOG` and quit/reopen DSH once (see "Diagnostic log" above).
 - In a fullscreen game or presentation mode the system suppresses always-on-top windows; leave fullscreen and try again.
 - If you changed monitors or resolution, the position may be out of bounds: delete `position` from `pets[]` in `main-config.jsonc` and she returns to the default position.
 

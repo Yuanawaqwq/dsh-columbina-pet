@@ -12,7 +12,18 @@
  */
 
 import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync } from 'node:fs';
+import {
+  appendFileSync,
+  closeSync,
+  existsSync,
+  mkdirSync,
+  openSync,
+  readSync,
+  renameSync,
+  statSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
@@ -68,6 +79,137 @@ type Logger = {
   debug?: (...args: unknown[]) => void;
 };
 
+type LoggerLevel = 'info' | 'warn' | 'error' | 'debug';
+
+/** 诊断日志文件的轮转阈值（超过就留一份 `.1`，别让它无限长）。 */
+const DIAG_LOG_MAX_BYTES = 2 * 1024 * 1024;
+
+/**
+ * 诊断日志文件的路径：只有设置了 `DSH_PET_DIAG_LOG` 才落盘。
+ *
+ * 为什么需要：桌面 App 把宿主 stdout 直接 pipe 给 App，而 App 是 GUI 进程、没有接收方，
+ * console 写得再清楚也留不下痕迹。设了这个环境变量，诊断在「看不见终端」的宿主里也有据可查。
+ * 不设 = 完全不碰文件系统，与原来行为一致。
+ */
+export function diagLogPath(env: Record<string, string | undefined> = process.env): string | undefined {
+  const value = env?.DSH_PET_DIAG_LOG;
+  return typeof value === 'string' && value.trim() !== '' ? value : undefined;
+}
+
+/** 把一条诊断追加到 `DSH_PET_DIAG_LOG` 指向的文件（2MB 轮转）；任何异常都不外抛。 */
+function appendDiagLog(level: LoggerLevel, message: string): void {
+  const file = diagLogPath();
+  if (file === undefined) return;
+  try {
+    try {
+      if (statSync(file).size > DIAG_LOG_MAX_BYTES) {
+        try {
+          unlinkSync(`${file}.1`);
+        } catch {
+          /* 旧轮转文件不存在：忽略 */
+        }
+        renameSync(file, `${file}.1`);
+      }
+    } catch {
+      /* 文件还不存在 / 读不到大小：直接追加即可 */
+    }
+    appendFileSync(file, `${new Date().toISOString()} [${level}] ${message}\n`);
+  } catch {
+    /* 写日志失败绝不能影响插件 */
+  }
+}
+
+/**
+ * 诊断泵：**先直出 console，再转给宿主 logger**。
+ *
+ * 为什么不是只调 logger：DSH 0.2.2-rc.3 注入的 ctx.logger 是 pino 风格采集器，
+ * info/warn/error 方法都在，但消息只进内部 buffer，**不进终端 stdout/stderr**。
+ * 排障时它等于静默 —— 用户看到的就是「桌面宠物没出来，宿主一句话都不说」。
+ * 两侧互相隔离：console 抛出、logger 抛出都各自吞掉，诊断代码本身绝不许把插件搞崩。
+ * 设置了 `DSH_PET_DIAG_LOG` 时，同一条消息还会追加进文件（见 appendDiagLog），
+ * 给没有终端的桌面宿主留证据。
+ */
+export function diag(logger: Logger | undefined, level: LoggerLevel, message: string): void {
+  try {
+    const sink = console[level] ?? console.log;
+    sink.call(console, message);
+  } catch {
+    /* 终端不可写：忽略 */
+  }
+  appendDiagLog(level, message);
+  const fn = logger?.[level];
+  if (typeof fn === 'function') {
+    try {
+      fn.call(logger, message);
+    } catch {
+      /* 采集器拒收：忽略 */
+    }
+  }
+}
+
+/** 读文件头判断「像不像本平台的 Electron 程序」——只读 4KB，不 spawn、不阻塞宿主。 */
+function binaryHeaderAcceptable(file: string): boolean {
+  try {
+    const fd = openSync(file, 'r');
+    let head: Buffer;
+    try {
+      const buf = Buffer.alloc(4096);
+      const size = readSync(fd, buf, 0, buf.length, 0);
+      head = buf.subarray(0, size);
+    } finally {
+      closeSync(fd);
+    }
+    // 非 Windows 不做头部收紧：macOS 的 .app 内 Electron 是 Mach-O、Linux 是 ELF，
+    // 格式五花八门；这里只拦 win32 上最容易踩的「不是 PE / 是 DLL」。
+    if (process.platform !== 'win32') return true;
+    if (head.length < 64 || head.readUInt16LE(0) !== 0x4d5a) return false; // 'MZ'
+    const peOffset = head.readUInt32LE(0x3c); // e_lfanew
+    if (peOffset < 64 || peOffset + 24 > head.length) return false;
+    if (head.readUInt32LE(peOffset) !== 0x00004550) return false; // 'PE\0\0'
+    const IMAGE_FILE_DLL = 0x2000;
+    return (head.readUInt16LE(peOffset + 22) & IMAGE_FILE_DLL) === 0; // Characteristics
+  } catch {
+    return true; // 读不了就别误杀，交给 spawn 自己报错
+  }
+}
+
+/**
+ * 候选 Electron 可执行文件「值得一试」吗：是普通文件、体积像样（>1MB 排除空壳/占位），
+ * 且（win32）文件头不是 DLL。
+ *
+ * 【为什么不能只看 existsSync】真实事故：DSH_PET_ELECTRON_PATH 指到改名 DLL 时
+ * 存在性检查通过、spawn 必然失败，而错误只进采集器缓冲区 —— 用户完全看不到原因。
+ */
+function electronBinaryUsable(file: string): boolean {
+  try {
+    const st = statSync(file);
+    if (!st.isFile() || st.size <= 1e6) return false;
+  } catch {
+    return false;
+  }
+  return binaryHeaderAcceptable(file);
+}
+
+/**
+ * 逃生开关：DSH_PET_NO_HELPER=1 → 完全不碰 Electron（不探测、不下载、不拉起）。
+ * 用途：①只用浏览器内宠物；②排障时先把桌面分支排除掉，看问题是否还在。
+ */
+export function helperDisabledByEnv(env: Record<string, string | undefined> = process.env): boolean {
+  return env?.DSH_PET_NO_HELPER === '1';
+}
+
+/** 把最近一次拉起失败落盘到 $DSH_HOME/columbina-pet/launch-error.json（Web 端诊断可读）。 */
+function writeLaunchError(payload: Record<string, unknown>): void {
+  try {
+    const dir = join(dshHomeDir(), 'columbina-pet');
+    mkdirSync(dir, { recursive: true });
+    const body = JSON.stringify({ at: new Date().toISOString(), ...payload }, null, 2);
+    writeFileSync(join(dir, 'launch-error.json'), body + '\n', 'utf8');
+  } catch {
+    /* 落盘失败只影响排障文件，不影响宠物本体 */
+  }
+}
+
 /**
  * 解析 Electron 可执行文件。
  * 优先级：
@@ -76,6 +218,9 @@ type Logger = {
  *   3. $DSH_HOME/electron（默认 ~/.dsh/electron）—— ensureElectronDownload 的落地路径
  *   4. 都不存在时由 ensureElectronDownload() 进程内异步下载（不 spawn 子进程，
  *      避免 process.execPath 在 Electron 宿主（如 DSH Desktop）里指向宿主 exe 导致崩溃）
+ *
+ * 每个候选都要过 electronBinaryUsable()：普通文件、体积 >1MB、且（win32）PE 头不是 DLL。
+ * 只判 existsSync 不够 —— 存在但跑不起来的文件比不存在更难排。
  */
 export function resolveElectronPath(candidates: Array<string | undefined> = []): string | undefined {
   const seen = new Set<string>();
@@ -96,7 +241,7 @@ export function resolveElectronPath(candidates: Array<string | undefined> = []):
   // 只认自己的落地路径（ensureElectronDownload 下载解压到 $DSH_HOME/electron）；
   // 不再去 npm 全局目录 / Program Files / /usr/bin 等别处探测别人装的 Electron。
   push(defaultElectronExe());
-  return list.find((value) => existsSync(value));
+  return list.find((value) => electronBinaryUsable(value));
 }
 
 /** $DSH_HOME（默认 ~/.dsh），与 ensure-electron.mjs 的 HOME 计算一致。 */
@@ -338,7 +483,9 @@ export class HelperProcess {
     });
     this.child = child;
     child.once('error', (error) => {
-      this.logger.error?.(`dsh-pet desktop helper failed to start: ${error.message}`);
+      diag(this.logger, 'error', `dsh-pet desktop helper failed to start: ${error.message}`);
+      // 落盘给 Web 端诊断：宿主日志看不见时，用户还能从这里拿到失败原因。
+      writeLaunchError({ stage: 'helper-spawn', command, message: error.message });
       // Failed spawn (ENOENT/EACCES) emits error, but no exit. Do not leave
       // a non-running child blocking every later start. Errors from a live
       // process (for example a failed kill) must still wait for its exit.
@@ -351,7 +498,9 @@ export class HelperProcess {
       if (this.child !== child) return;
       this.child = undefined;
       if (!this.stopping) {
-        this.logger.warn?.(
+        diag(
+          this.logger,
+          'warn',
           `dsh-pet desktop helper exited (code=${String(code)}, signal=${String(signal)}); restarting`,
         );
         this.scheduleRestart();
@@ -362,7 +511,7 @@ export class HelperProcess {
     });
     child.stderr.on('data', (chunk) => {
       const line = String(chunk).trim();
-      if (line) this.logger.warn?.(`[dsh-pet desktop helper] ${line}`);
+      if (line) diag(this.logger, 'warn', `[dsh-pet desktop helper] ${line}`);
     });
     child.stdin?.on('error', () => {
       /* EPIPE 等：进程退出/重启期间回写失败静默（下一轮 start 重建管道） */
@@ -383,7 +532,7 @@ export class HelperProcess {
         void this.handleBridgeLine(trimmed);
         continue;
       }
-      this.logger.debug?.(`[dsh-pet desktop helper] ${trimmed}`);
+      diag(this.logger, 'debug', `[dsh-pet desktop helper] ${trimmed}`);
     }
   }
 
@@ -396,7 +545,7 @@ export class HelperProcess {
     try {
       req = JSON.parse(line.slice(BRIDGE_PREFIX.length)) as BridgeRequest;
     } catch {
-      this.logger.warn?.('[dsh-pet desktop helper] bridge 协议行非法，已忽略');
+      diag(this.logger, 'warn', '[dsh-pet desktop helper] bridge 协议行非法，已忽略');
       return;
     }
     if (typeof req.id !== 'number') return;
@@ -443,7 +592,7 @@ export class HelperProcess {
     this.stopping = true;
     if (this.restartTimer) clearTimeout(this.restartTimer);
     this.restartTimer = undefined;
-    this.logger.debug?.(`dsh-pet desktop helper stopping (${reason})`);
+    diag(this.logger, 'debug', `dsh-pet desktop helper stopping (${reason})`);
     const child = this.child;
     if (!child) return;
     child.kill();
@@ -463,7 +612,7 @@ export class HelperProcess {
     const child = this.child;
     if (!child) return;
     await waitForChildExit(child, timeoutMs, () => {
-      this.logger.warn?.(`dsh-pet desktop helper 未在 ${timeoutMs}ms 内退出，升级 SIGKILL（${reason}）`);
+      diag(this.logger, 'warn', `dsh-pet desktop helper 未在 ${timeoutMs}ms 内退出，升级 SIGKILL（${reason}）`);
       try {
         child.kill('SIGKILL');
       } catch {
@@ -483,7 +632,9 @@ export class HelperProcess {
       this.restartFailures += 1;
     }
     if (shouldCircuitBreak(this.restartFailures, this.resolveMaxFailures())) {
-      this.logger.error?.(
+      diag(
+        this.logger,
+        'error',
         `dsh-pet desktop helper crashed ${this.restartFailures} consecutive times; circuit breaker tripped, ` +
           `no more restarts. Fix the environment (e.g. DISPLAY/headless) or set DSH_PET_RESTART_MAX_FAILURES to raise the limit.`,
       );
@@ -493,7 +644,9 @@ export class HelperProcess {
     // 首次崩溃等 base（= 750ms 默认），与旧版固定首延和 restartBackoffDelayMs 的 0 起序列一致：
     // 计数是"已经崩了几次"（1 起），延迟要按"第几次重试"（0 起）取，故减 1
     const delay = restartBackoffDelayMs(this.restartFailures - 1, base);
-    this.logger.warn?.(
+    diag(
+      this.logger,
+      'warn',
       `dsh-pet desktop helper exited; restarting in ${Math.round(delay)}ms ` +
         `(attempt ${this.restartFailures}, consecutive-crash limit ${this.resolveMaxFailures()})`,
     );

@@ -1,5 +1,18 @@
 # 更新日志
 
+## 1.2.4 — 2026-11-16
+
+- **诊断被宿主吞掉的根因**：`ctx.logger` 在 DSH 0.2.2-rc.3 里是 pino 风格的采集器——`info / warn / error` 方法都在，但消息只进它自己的 buffer，**不进终端 stdout / stderr**（探针实测：`loggerKeys=bufferSize,buffer,ctx,_snMessage,_snExporter,exporters`）。桌面 App 又把宿主 stdout 直接 pipe 给 GUI 进程、没有接收方，于是「桌面宠物起不来」在宿主里是零痕迹：没日志、没 `launch-error.json`、没 electron 进程。新增 `diag(logger, level, message)`：先 `console[level]` 直出，再把同一句转给宿主 logger，两侧各自 try/catch；19 处 `this.logger.xx?.()` / `ctx.logger?.xx?.()` 全部改走它
+- **可选诊断日志文件 `DSH_PET_DIAG_LOG`**：设了路径才落盘（`ISO 时间 [级别] 消息`，超 2 MB 轮转成 `.1`），默认完全不碰文件系统；给没有终端的桌面宿主留证据
+- **Electron 二进制加头部校验**：`electronBinaryUsable()` 从「是文件且 > 1 MB」升级为再验 PE 头（`MZ`、`e_lfanew`(0x3C) → `PE\0\0`、`Characteristics`(peOff+22) 不含 `0x2000` IMAGE_FILE_DLL；非 win32 直接放行，异常一律放行不误杀）。被改名的大文件 / 残缺 exe 不再被当成可用 Electron，转而走下载或明确报错
+- **启动失败写 `launch-error.json`**：helper `spawn` 失败时在 diag 之外再落 `{stage: "helper-spawn", command, message}`，与已有的 `electron-download` 那份同目录同格式
+- **逃生开关 `DSH_PET_NO_HELPER=1`**：设了就在 `startHelper()` 首行返回，跳过 Electron 探测与下载（浏览器内宠物不受影响），只打一行 info
+- **`src/` 同步**：`diag` / `diagLogPath` / `appendDiagLog` / `binaryHeaderAcceptable` / `electronBinaryUsable` / `writeLaunchError` / `helperDisabledByEnv` 与 `startHelper` 守卫补进 TS 参考；`resolveElectronPath` 的文档改成「每个候选都要过 `electronBinaryUsable()`」
+- **测试**：新增 `test/test-diag-helpers.cjs`（27 条断言：diag 的 console 回退、PE 头校验、非 win32 放行、日志文件开关与 2 MB 轮转），总数 **12 文件 / 239 断言**；`src/host/helper-process.test.ts` 同步新增 `helperDisabledByEnv`、假 Electron 写入器与日志落盘用例
+- **实测**：真 Electron（225,441,792 B）仍判可用；6 MB 改名 DLL 从「可用」变「不可用」；桌面 App 带 `DSH_PET_DIAG_LOG` 重启后，`activated`、`helper started`、helper 子进程的 `displays` / `bridge callback` 四行都进了文件
+- **README（三语同步）**：新增「诊断日志（可选，1.2.4+）」一节与 1.2.4 更新公告；排障「桌宠没出现 → 桌面模式」补 `launch-error.json` 与 `DSH_PET_DIAG_LOG`；用例数改成 12 文件 / 239 断言；npm 安装示例版本改成 1.2.4。三份文档结构保持一致（45 个三级标题 / 706 行 / 75 行表格）
+- **兼容声明**不变（仍是 `0.2.2-rc.3` 实测兼容）
+
 ## 1.2.3 — 2026-11-16
 
 - **菜单与译文的细活（同日补做）**：①日英菜单的 76 句原声台词改成「标题 + 正文摘要」，两端共用 `TITLE_I18N` / `WEB_MENU_EXTRA_I18N`；②日文词典整体校订——删掉 17 条同键重复（英文值覆盖日文值，动作切片别名显示成 `Snack / Humming / Idle`）、17 条 `コロンビア` 改回官方 `コロンビーナ`，另修 20 条措辞（`表示先` / `元の位置に戻す` / `オリジナルボイス` / `元素スキルと元素爆発` / `おやすみモード` 等）；③省电模式、语音包与素材、待机动作、2D live、音量、夜间勿扰、碎碎念开关与单位等小项全部过 `trText` / `webTr`，网页端同步；④新增 `test-menu-i18n.cjs`（en 树不得含 CJK、ja 树不得有未翻译中文键，5 条断言），总测试数 10 个文件（另含 `run.mjs`）。
