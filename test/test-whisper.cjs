@@ -34,9 +34,15 @@ function makeEl(tag) {
     classList: makeClassList(),
     attributes: {},
     isConnected: false,
-    textContent: '',
     _rect: { left: 0, top: 0, width: 0, height: 0 },
     appendChild(c) { c.isConnected = true; el.children.push(c); return c; },
+    insertBefore(c, ref) {
+      c.isConnected = true;
+      const i = ref ? el.children.indexOf(ref) : -1;
+      if (i < 0) el.children.push(c); else el.children.splice(i, 0, c);
+      return c;
+    },
+    get firstChild() { return el.children.length > 0 ? el.children[0] : null; },
     setAttribute(k, v) { el.attributes[k] = v; },
     getBoundingClientRect() { return el._rect; },
   };
@@ -49,6 +55,11 @@ function makeEl(tag) {
       el.classList._set.clear();
       for (const c of cname.split(/\s+/).filter(Boolean)) el.classList._set.add(c);
     },
+  });
+  let textVal = "";
+  Object.defineProperty(el, "textContent", {
+    get() { return textVal; },
+    set(v) { textVal = String(v); el.children.length = 0; },
   });
   return el;
 }
@@ -144,6 +155,27 @@ api.hideWhisperSubtitle();
 check('hide removes is-on', !sub.classList.contains('is-on'));
 tick();
 check('hide stops loop', rafs.size === 0);
+
+// 8. 配图：浮层接管渲染后一度只写文本、把 image 丢了（1.2.5 回归），这里锁住图文两条路径
+api.showWhisperSubtitle('带图的句子', 5000, '好吃', '', '');
+const picBubble = host.children[0];
+const picImg = picBubble.children[0];
+check('meme img mounted first', !!picImg && picImg.tagName === 'IMG', picImg && picImg.tagName);
+check('meme img class', picImg && picImg.className === 'pet-bub-img');
+check('meme img src by name', picImg && picImg.src === '/dsh-columbina-pet-7340/pic/memes/%E5%A5%BD%E5%90%83.png', picImg && picImg.src);
+check('meme img alt = name', picImg && picImg.alt === '好吃');
+check('bubble has-img class', picBubble.classList.contains('has-img'));
+check('text kept with img', picBubble.textContent === '带图的句子');
+
+api.showWhisperSubtitle('显式 url 优先', 5000, '好吃', 'https://example.com/a.webp', '');
+const urlImg = host.children[0].children[0];
+check('explicit url wins over name', urlImg && urlImg.src === 'https://example.com/a.webp', urlImg && urlImg.src);
+check('alt falls back to name', urlImg && urlImg.alt === '好吃');
+
+api.showWhisperSubtitle('没有配图', 5000);
+const plainBubble = host.children[0];
+check('no img without image', plainBubble.children.length === 0, `children=${plainBubble.children.length}`);
+check('no has-img without image', !plainBubble.classList.contains('has-img'));
 
 const failed = results.filter((r) => !r.ok);
 console.log(`\n${results.length - failed.length}/${results.length} passed`);

@@ -1314,11 +1314,11 @@
     return 'cloud';
   }
 
-  /** 天气接口在国内线路偶尔会抖：超时放宽到 12s，失败再试一次，别一句话就认输 */
+  /** 天气接口在国内线路偶尔会抖：单次别等太久，失败再试一次，两次合计不到 12.5s 就出结论 */
   function fetchWeatherJson(url) {
-    return fetchJson(url, 12000).catch(function (err) {
-      return new Promise(function (resolve) { setTimeout(resolve, 800); }).then(function () {
-        return fetchJson(url, 12000);
+    return fetchJson(url, 8000).catch(function (err) {
+      return new Promise(function (resolve) { setTimeout(resolve, 400); }).then(function () {
+        return fetchJson(url, 4000);
       });
     });
   }
@@ -1386,9 +1386,9 @@
     var hh = ('0' + d.getHours()).slice(-2);
     var mm = ('0' + d.getMinutes()).slice(-2);
     var lang = normLang(subLang, 'zh');
-    if (lang === 'ja') return '（' + hh + ':' + mm + ' に測った記録）';
-    if (lang === 'en') return ' (' + hh + ':' + mm + ' reading)';
-    return '（' + hh + ':' + mm + ' 记下的）';
+    if (lang === 'ja') return '（古い記録・' + hh + ':' + mm + '）';
+    if (lang === 'en') return ' (older reading, ' + hh + ':' + mm + ')';
+    return '（旧数据 · ' + hh + ':' + mm + '）';
   }
 
   function weatherSummary(w) {
@@ -1403,9 +1403,9 @@
 
   function weatherFailText() {
     var lang = normLang(subLang, 'zh');
-    if (lang === 'ja') return '今日の天気は…いま聞けないみたい。';
-    if (lang === 'en') return 'The weather... I cannot reach it right now.';
-    return '今天的天气…这会儿问不到呢。';
+    if (lang === 'ja') return '今日の天気は…いま聞けないみたい。あとでもう一度見てみるね。';
+    if (lang === 'en') return 'The weather... I cannot reach it right now. I will try again a bit later.';
+    return '今天的天气…这会儿问不到呢。过一会儿我再试一次。';
   }
 
   function weatherLocText(w) {
@@ -1426,6 +1426,7 @@
     return pool;
   }
 
+  var lastWeatherChatterText = '';
   function weatherLine(w) {
     var label = WEATHER_LINE_LABELS[w.mood];
     var idx = label === undefined ? undefined : menuLineByLabel[label];
@@ -1435,10 +1436,13 @@
     if (!pool.length) return null;
     var fresh = [];
     for (var i = 0; i < pool.length; i++) {
-      if (subtitleOf(pool[i]) !== lastText) fresh.push(pool[i]);
+      var sub = subtitleOf(pool[i]);
+      if (sub !== lastText && sub !== lastWeatherChatterText) fresh.push(pool[i]);
     }
     var base = fresh.length ? fresh : pool;
-    return base[Math.floor(Math.random() * base.length)];
+    var picked = base[Math.floor(Math.random() * base.length)];
+    lastWeatherChatterText = picked ? subtitleOf(picked) : '';
+    return picked;
   }
 
   /** 主流程：先垫一句「让我看看」，数据回来先上字幕，念完再让台词接上；两句都带自己的字幕 */
@@ -1451,13 +1455,26 @@
       : lang === 'en' ? 'Let me check the weather…'
         : '让我看看今天的天气…';
     showBubble(thinking, 20000, true);
+    // 等太久会让人以为没反应：4 秒还没回来就换一句，把"还在等"说出口
+    var reassure = setTimeout(function () {
+      var still = lang === 'ja' ? '雲が少し厚いみたい、もう少し待ってね…'
+        : lang === 'en' ? 'The readings are slow to come... give me a moment…'
+          : '云有点厚，再等等…';
+      showBubble(still, 9000, true);
+    }, 4000);
     weatherPending = readWeather({ fresh: false, geo: opts.geo === true })
       .then(function (w) {
+        clearTimeout(reassure);
         // 20 分钟内先把缓存端上来（免得每次都要等网络），再在后台静默刷新，
         // 这样下一次问到的已经是新的；刷不到就算了，手里这份照旧能用。
         if (!w.stale) {
           var age = Date.now() - (Number(w.at) || 0);
           if (age > 4 * 60 * 1000) readWeather({ fresh: true }).catch(function () { /* 后台刷新失败不打扰 */ });
+        } else {
+          // 端的是旧数据：先把话说出去，过一会儿再偷偷试一次，下次问就是新的
+          setTimeout(function () {
+            readWeather({ fresh: true }).catch(function () { /* 还是不行就等下次 */ });
+          }, 8000);
         }
         var summary = weatherSummary(w);
         var ms = Math.max(3600, Math.min(9200, 1500 + summary.length * 130));
@@ -1472,9 +1489,14 @@
         });
       })
       .catch(function (err) {
+        clearTimeout(reassure);
         console.warn('[columbina-voice] 天气取不到：' + (err && err.message ? err.message : err));
-        showBubble(weatherFailText(), 4200, true);
+        showBubble(weatherFailText(), 5600, true);
         scheduleWhisper();
+        // 失败也留个后手：20 秒后自己再试一次，成了下次问就有新数据
+        setTimeout(function () {
+          readWeather({ fresh: true }).catch(function () { /* 还是不行就算了 */ });
+        }, 20000);
         return null;
       });
     weatherPending.then(function () { weatherPending = null; }, function () { weatherPending = null; });
@@ -2380,9 +2402,53 @@
     var proto = Object.getPrototypeOf(sprite);
     if (!proto || typeof proto.handleEnded !== 'function' || proto.__columbinaPacingPatched) return;
     var orig = proto.handleEnded;
+    var origPlayOnce = typeof proto.playOnce === 'function' ? proto.playOnce : null;
+
+    function stopPace(self) {
+      if (self.__columbinaPaceTimer) {
+        try { clearInterval(self.__columbinaPaceTimer); } catch (e) { /* ignore */ }
+        self.__columbinaPaceTimer = 0;
+      }
+      var el = self.__columbinaPaceEl;
+      self.__columbinaPaceEl = null;
+      if (el) { try { el.loop = false; } catch (e) { /* 改不回来只多循环一圈 */ } }
+    }
+
+    /** 这条动画从「开始播」就挂上 loop，交给 <video> 自己无缝循环；到点再摘掉 loop，
+     *  这一遍放完会自然触发 ended，由 handleEnded 切下一段。
+     *  以前是 ended 之后 el.currentTime = 0 + play()：每圈都要 seek、重开解码，
+     *  看起来就是「卡一下再接一圈」。循环播放的语义不变，只是不再有那一下卡顿。 */
+    function armPace(self, wait) {
+      stopPace(self);
+      if (!(wait > 0)) return;
+      var el = self.front === 0 ? self.videoB : self.videoA;   // 即将成为前台的那个缓冲
+      if (!el || typeof el.play !== 'function') return;
+      var gen = self.gen;
+      self.__columbinaPaceDone = 0;
+      self.__columbinaPaceEl = el;
+      self.__columbinaPaceUntil = Date.now() + wait;
+      try { el.loop = true; } catch (e) { return; }            // 不支持 loop 就退回老行为
+      self.__columbinaPaceTimer = setInterval(function () {
+        if (self.gen !== gen || self.__columbinaPaceEl !== el) { stopPace(self); return; }
+        if (Date.now() < self.__columbinaPaceUntil) return;
+        // 停留够了：标记这一段，再摘 loop——这一遍放完自然走 ended，交给原逻辑切下一段
+        self.__columbinaPaceDone = gen;
+        stopPace(self);
+        if (self.playback) {
+          var pb = self.playback;
+          self.playback = null;
+          try { self.reportPlayback(pb, 'ended'); } catch (e) { /* ignore */ }
+        }
+      }, 120);
+    }
+
     proto.handleEnded = function () {
       var self = this;
       var wait = Math.max(0, Math.round(animIntervalMs));
+      if (self.__columbinaPaceDone === self.gen) {   // 这一遍是「停够时长」之后自然放完的
+        self.__columbinaPaceDone = 0;
+        return orig.call(self);
+      }
       if (wait <= 0) return orig.call(self);          // 立即切：原样交给 dsh-pet
       var now = Date.now();
       var gen = self.gen;
@@ -2391,7 +2457,7 @@
         self.__columbinaDwellUntil = now + wait;
       }
       if (now >= self.__columbinaDwellUntil) return orig.call(self);   // 停够了，切下一段
-      // 还没停够：这一遍确实播完了，先把回执给宿主，再从头上循环同一条
+      // 兜底：loop 没挂上（旧素材 / loop 被别处改回来）时，仍用老办法从头重播一遍
       if (self.playback) {
         var pb = self.playback;
         self.playback = null;
@@ -2408,6 +2474,14 @@
         return orig.call(self);
       }
     };
+    if (origPlayOnce) {
+      proto.playOnce = function () {
+        var self = this;
+        var r = origPlayOnce.apply(self, arguments);
+        try { armPace(self, Math.max(0, Math.round(animIntervalMs))); } catch (e) { /* ignore */ }
+        return r;
+      };
+    }
     proto.__columbinaPacingPatched = true;
   }
 

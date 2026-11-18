@@ -24,9 +24,16 @@ function makeClassList() {
 function makeEl(tag) {
   const el = {
     tagName: String(tag).toUpperCase(), children: [], style: makeStyle(), classList: makeClassList(),
-    attributes: {}, isConnected: false, textContent: '',
+    attributes: {}, isConnected: false,
     _rect: { left: 0, top: 0, width: 0, height: 0 },
     appendChild(c) { c.isConnected = true; el.children.push(c); return c; },
+    insertBefore(c, ref) {
+      c.isConnected = true;
+      const i = ref ? el.children.indexOf(ref) : -1;
+      if (i < 0) el.children.push(c); else el.children.splice(i, 0, c);
+      return c;
+    },
+    get firstChild() { return el.children.length > 0 ? el.children[0] : null; },
     setAttribute(k, v) { el.attributes[k] = v; },
     getBoundingClientRect() { return el._rect; },
   };
@@ -38,6 +45,11 @@ function makeEl(tag) {
       el.classList._set.clear();
       for (const c of cname.split(/\s+/).filter(Boolean)) el.classList._set.add(c);
     },
+  });
+  let textVal = "";
+  Object.defineProperty(el, "textContent", {
+    get() { return textVal; },
+    set(v) { textVal = String(v); el.children.length = 0; },
   });
   return el;
 }

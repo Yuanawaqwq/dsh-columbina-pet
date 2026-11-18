@@ -52,6 +52,20 @@ Let me put the expectations up front:
 
 > Version-by-version details live in [CHANGELOG.md](./CHANGELOG.md); downloadable packages are on [Releases](https://github.com/Yuanawaqwq/dsh-columbina-pet/releases). Every release gets a section here explaining **what changed and whether you need to touch your settings**.
 
+### 1.2.6 · 2026-11-18
+
+> No new features, no changes to the sprites or the voice lines — this one is about **making her move smoothly**: no more stutter at every loop point, the web pet now follows the same path as the desktop one, the weather gets a reply while it is still thinking, and diagnostic logs no longer need an environment variable. **No setting needs to change**; please **fully quit and reopen DSH** after upgrading (host, desktop helper and web half all changed).
+
+- **Looping animations no longer stutter once per lap**: whenever a clip had to play more than once, every lap ended with the play head being sent back to 0 and restarted — which is exactly the black flicker at the loop point. The clip now loops natively through the video element's `loop`, and the flag is dropped once the dwell time is up so the last lap runs to its natural end. Desktop helper and web pet now share **one** implementation (the web half had been left on the old seek-and-replay one).
+- **"Switch interval" now means what it says**: it used to be "the first lap finishes, then wait N seconds", so idle motions (played at 0.6×) often took 6–10 s to change and the setting barely mattered. Now N seconds means "play at least N seconds, then swap when this lap ends". Want the old leisurely pace back? Set the interval to **3000–5000 ms**.
+- **Whisper images are back on the web pet**: the 1.2.5 subtitle fix dropped a step — once the subtitle moved to its own overlay it only wrote the text, so `image` reached the browser but nothing drew it (the desktop pet was unaffected). The overlay now builds the picture the same way as before: an explicit `url` wins, otherwise the meme name resolves to `/pic/memes/<name>.png`, with the image above the text and scaled to the pet.
+- **The weather answers while it is still thinking**: if the network is slow, after 4 s she says "the clouds are a bit thick, give me a moment…" (Japanese and English too) instead of staying silent for a dozen seconds.
+- **A clear answer when it cannot be reached**: the failure line became "the weather today… I cannot get it right now. I will try again a bit later.", the bubble stays 5.6 s instead of 4.2 s, and she retries **silently in the background after 20 s** — even a success there will not interrupt you.
+- **Stale readings are labelled**: when the network hiccups she answers from the last cached reading and appends "older reading, 21:38", and schedules a background refresh so the next answer is fresh.
+- **Diagnostic logs no longer need an environment variable**: add a top-level `diagLog` to `~/.dsh/columbina-pet/main-config.jsonc` — `true` writes to the default `diag.log`, or give it a path (relative paths land under `~/.dsh/columbina-pet/`). `DSH_PET_DIAG_LOG` still wins when set, so ad-hoc debugging works as before.
+- **Tests**: new `test/test-126-polish.cjs` (65 assertions: it slices `installAnimPacing` and `applyDiagLogSetting` out and runs them against fakes — when `loop` is set and dropped, self-stop on generation change, the fallback replay when `loop` is unavailable, the four `diagLog` values and the env-variable precedence, and the web half's matching behaviour). Ten more regression assertions for the web subtitle image live in `test/test-whisper.cjs`. **15 files / 333 assertions** in total.
+- **README (all three languages)**: 1.2.6 notes added; the diagnostic-log section covers the config-file form; the switch-interval wording is now literal.
+
 ### 1.2.5 · 2026-11-18
 
 > This release **changes no artwork and adds no features**. It fixes four awkward spots: menus overlapping at the screen edge, voice lines collapsing into their body text, weather that took a long time and then said the wrong thing, and "relocate" giving no feedback. **No settings need changing**; after upgrading, **fully quit DSH and reopen** (the host half changed `/healthz` as well).
@@ -68,7 +82,8 @@ Let me put the expectations up front:
 > This release **does not touch sprites, voice lines or add features**; it does one thing — when she fails to start, the reason becomes visible. **No settings to change**; as always, **quit DSH completely and start it again** after upgrading.
 
 - **Root cause: the logs were there, just written where nobody reads them.** In DSH 0.2.2-rc.3 `ctx.logger` is a pino-style collector — `info / warn / error` all exist, but messages only go into its own buffer and **never reach the terminal**. The desktop app then pipes the host's stdout straight into a GUI process that has no receiver. So "the desktop pet will not start" left **zero trace**: no error, no `launch-error.json`, no `electron.exe` in Task Manager. Diagnostics now go to `console` first and are forwarded to the host logger second, each side wrapped in its own `try/catch`.
-- **A log file for hosts without a terminal (optional):** set `DSH_PET_DIAG_LOG=<path>` and diagnostics are also appended to that file (`ISO time [level] message`, rotated to `.1` past 2 MB). Without the variable the plugin writes no diagnostic log.
+- **A log file for hosts without a terminal (optional):** set `DSH_PET_DIAG_LOG=<path>` and diagnostics are also appended to that file (`ISO time [level] message`, rotated to `.1` past 2 MB). **If you would rather not touch environment variables (1.2.6+):** add a top-level `diagLog` to `~/.dsh/columbina-pet/main-config.jsonc` — `true` writes to the default `diag.log`, or give it a path (relative paths land under `~/.dsh/columbina-pet/`). Restart DSH to apply; `DSH_PET_DIAG_LOG` still takes precedence.
+- Without the variable and without `diagLog` in the config the plugin writes no diagnostic log.
 - **Fake or truncated Electron binaries are no longer accepted:** the old check only required "a file larger than 1 MB", so a renamed big file — or a half-updated exe — passed and then failed to spawn. It now also verifies the PE header (`MZ` → `PE\0\0`, and not a DLL; **Windows only** — macOS/Linux builds use other formats and keep the old permissive check).
 - **`launch-error.json` on startup failure:** a failed helper `spawn` now writes `{stage: "helper-spawn", command, message}`, same directory and shape as the existing download-failure file.
 - **`DSH_PET_NO_HELPER=1`** skips Electron detection and download entirely (web-side pet still works) and prints a single line — handy to check whether the helper is what is bothering the host.
@@ -384,11 +399,11 @@ Then add it to the profile's `package.json`:
 
 **Quit DSH completely and start it again** (closing the window or refreshing the page does not count as a restart).
 
-### Install from npm (1.2.5)
+### Install from npm (1.2.6)
 
 ```bash
 cd ~/.dsh/profiles/<你的 profile>
-npm install dsh-columbina-pet@1.2.5
+npm install dsh-columbina-pet@1.2.6
 ```
 
 Once it is installed, add `dsh-columbina-pet` to the profile's `dsh.profile.bundles` the same way, then **quit DSH completely and open it again**.
@@ -593,7 +608,7 @@ If that feels like too much trouble, just message [六硬币的好活](https://s
 
 | Menu | What it does |
 | --- | --- |
-| Switch interval | how long a motion **stays** after it finishes before the next one starts (Immediately / 1–60 s, default is switch immediately) |
+| Switch interval | how long a motion **plays at least** before the next one takes over (Immediately / 1–60 s, default is switch immediately; literal since 1.2.6) |
 | 2D live sprite set | switch instantly between the four sprite sets |
 | Language | switch voice language, subtitle language and menu language between Chinese / Japanese / English independently |
 | Model size | 0.5× – 3×, with the window kept inside the screen's work area |
