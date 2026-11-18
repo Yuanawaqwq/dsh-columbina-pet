@@ -52,6 +52,17 @@ Let me put the expectations up front:
 
 > Version-by-version details live in [CHANGELOG.md](./CHANGELOG.md); downloadable packages are on [Releases](https://github.com/Yuanawaqwq/dsh-columbina-pet/releases). Every release gets a section here explaining **what changed and whether you need to touch your settings**.
 
+### 1.2.5 · 2026-11-18
+
+> This release **changes no artwork and adds no features**. It fixes four awkward spots: menus overlapping at the screen edge, voice lines collapsing into their body text, weather that took a long time and then said the wrong thing, and "relocate" giving no feedback. **No settings need changing**; after upgrading, **fully quit DSH and reopen** (the host half changed `/healthz` as well).
+
+- **Menus no longer overlap at the right screen edge**: the menu is clamped to "pet window ∩ monitor work area", and with the window hugging the right edge only about half the width is usable — the third column used to be forced back on top of its parent. Columns now get a width budget by tree depth (at most 300 px, at least 120 px); in narrow space a compact mode drops the grey summary and keeps titles whole — titles are never ellipsised.
+- **Voice-line entries are back to "short title + grey line"**: when trilingual titles landed in 1.2.3 the condition was inverted, so in Chinese menus the title was replaced with the whole body text — menus got bulky and the sub-menu covered its parent. Reverted to title-first; Japanese/English menus are fixed wherever a translation is missing.
+- **Weather is faster and lies less**: results within 20 minutes are answered from cache while a silent background refresh runs (it used to hit the network every time). When the network hiccups it falls back to the last record and notes when it was taken — "（21:38 记下的）" style — instead of hanging or just failing.
+- **Clear skies no longer always play "my song"**: clear / partly cloudy / overcast / fog have no dedicated weather line, so it fell back to a random chatter line — and the first one in that group is the 8.5-second "my song is not sung for anyone". The fallback now skips the line just spoken.
+- **"Relocate" answers immediately**: tapping it shows "let me see where you are…" right away, reports the city as soon as geolocation returns, and computes the weather in the background.
+- **`/healthz` can tell two kinds of "not running" apart**: new `helperDisabled` (whether you turned it off with `DSH_PET_NO_HELPER=1`) and `clientBuildSha` (hash of the client half, so a half-install that only swapped the entry file is visible).
+
 ### 1.2.4 · 2026-11-16
 
 > This release **does not touch sprites, voice lines or add features**; it does one thing — when she fails to start, the reason becomes visible. **No settings to change**; as always, **quit DSH completely and start it again** after upgrading.
@@ -263,7 +274,7 @@ Everything here is reachable from the **context menu** or the **settings panel**
   npm test        # every case under test/: zero dependencies, built-ins only, no network
   ```
 
-- **12 case files, 239 assertions**, all with a self-built fake DOM / fake clock / fake audio: request-body encoding 19, client boot guard 9, cross-site writes 16, dictionary coverage 8, trilingual menu tree 7, panel copy 27, Range 24, panel interaction 32, web/desktop parity 36, subtitles following audio 15, chatter 19, diagnostics and binary validation 27. CI runs them on Node 22 and on 24 (`.github/workflows/ci.yml`, repo-only, not shipped in the npm package).
+- **13 case files, 246 assertions**, all with a self-built fake DOM / fake clock / fake audio: request-body encoding 19, client boot guard 9, cross-site writes 16, dictionary coverage 8, trilingual menu tree 7, panel copy 27, Range 24, panel interaction 32, web/desktop parity 36, subtitles following audio 15, chatter 19, diagnostics and binary validation 27, healthz fields 7. CI runs them on Node 22 and on 24 (`.github/workflows/ci.yml`, repo-only, not shipped in the npm package).
 - Before a release, also run `node scripts/check-voice-asset.mjs`: the voice pack is an external asset, so confirm in advance that it is still online.
 
 ## Package size: why it is this big, and how to shrink it
@@ -373,11 +384,11 @@ Then add it to the profile's `package.json`:
 
 **Quit DSH completely and start it again** (closing the window or refreshing the page does not count as a restart).
 
-### Install from npm (1.2.4)
+### Install from npm (1.2.5)
 
 ```bash
 cd ~/.dsh/profiles/<你的 profile>
-npm install dsh-columbina-pet@1.2.4
+npm install dsh-columbina-pet@1.2.5
 ```
 
 Once it is installed, add `dsh-columbina-pet` to the profile's `dsh.profile.bundles` the same way, then **quit DSH completely and open it again**.

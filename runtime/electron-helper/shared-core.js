@@ -965,9 +965,11 @@ const MENU_CSS = [
 	".dsh-pet-menu-item{position:relative;display:flex;align-items:center;justify-content:space-between;",
 	"gap:14px;padding:5px 12px;border-radius:6px;white-space:nowrap;cursor:default}",
 	".dsh-pet-menu-item:hover{background:rgba(43,99,255,.14)}",
-	".dsh-pet-menu-item>span:first-child{min-width:0;overflow:hidden;text-overflow:ellipsis}",
-	".dsh-pet-menu-hint{color:#9aa0a6;font-size:12px;flex:none;white-space:nowrap}",
-	".dsh-pet-menu-arrow{color:#9aa0a6;font-size:12px;flex:none}"
+	".dsh-pet-menu-item>span:first-child{min-width:0;flex:0 1 auto;overflow:hidden;text-overflow:ellipsis}",
+	".dsh-pet-menu-hint{color:#9aa0a6;font-size:12px;flex:0 100 auto;min-width:0;max-width:45%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
+	".dsh-pet-menu-arrow{color:#9aa0a6;font-size:12px;flex:none}",
+	".dsh-pet-menu-tight .dsh-pet-menu-hint{display:none}",
+	".dsh-pet-menu-tight .dsh-pet-menu-item{padding:5px 8px;gap:8px}"
 ].join("");
 function isBranchNode(n) {
 	return "children" in n && Array.isArray(n.children);
@@ -980,6 +982,20 @@ function mountContextMenu(opts) {
 		w: window.innerWidth,
 		h: window.innerHeight
 	};
+	/** 树有几层就最多并排几列：列宽按可用宽度均分，避免窄区域里三列互相压住。
+	*  宠物贴在屏幕边缘时夹取矩形会变窄，三列各 300px 根本放不下——那样子面板会被
+	*  「夹回左缘」压在父菜单身上。窄的时候按比例收窄，并隐去右侧摘要。 */
+	const menuDepth = (() => {
+		const walk = (nodes) => {
+			let best = 1;
+			for (const n of nodes) if (isBranchNode(n) && n.children.length) best = Math.max(best, 1 + walk(n.children));
+			return best;
+		};
+		return walk(tree);
+	})();
+	const columnGap = 4;
+	const columnMax = Math.min(300, Math.max(120, Math.floor((c.w - 8 - columnGap * (menuDepth - 1)) / menuDepth)));
+	const tightMenu = columnMax < 230;
 	const root = document.createElement("div");
 	root.className = "dsh-pet-menu";
 	root.style.left = "0px";
@@ -1005,9 +1021,9 @@ function mountContextMenu(opts) {
 		panel.style.left = "";
 		panel.style.top = "";
 		panel.style.display = "block";
-		panel.style.maxWidth = Math.max(120, c.x + c.w - 8) + "px";
-		let left = rect.right + 4;
-		if (left + panel.offsetWidth > c.x + c.w - 4) left = rect.left - panel.offsetWidth - 4;
+		panel.style.maxWidth = columnMax + "px";
+		let left = rect.right + columnGap;
+		if (left + panel.offsetWidth > c.x + c.w - 4) left = rect.left - panel.offsetWidth - columnGap;
 		left = Math.max(c.x + 4, Math.min(left, Math.max(c.x + 4, c.x + c.w - panel.offsetWidth - 4)));
 		let top = rect.top;
 		if (top + panel.offsetHeight > c.y + c.h - 4) top = Math.max(c.y + 4, c.y + c.h - 4 - panel.offsetHeight);
@@ -1021,6 +1037,8 @@ function mountContextMenu(opts) {
 		panel.className = "dsh-pet-menu-column";
 		panel.style.display = "none";
 		if (clamp) panel.style.maxHeight = Math.min(460, Math.max(120, c.h - 16)) + "px";
+		panel.style.maxWidth = columnMax + "px";
+		if (tightMenu) panel.classList.add("dsh-pet-menu-tight");
 		root.appendChild(panel);
 		for (const node of nodes) {
 			const item = document.createElement("div");
@@ -1067,7 +1085,7 @@ function mountContextMenu(opts) {
 	document.body.appendChild(root);
 	rootPanel.style.left = "";
 	rootPanel.style.top = "";
-	rootPanel.style.maxWidth = Math.max(120, c.w - 8) + "px";
+	rootPanel.style.maxWidth = columnMax + "px";
 	if (rootPanel.offsetHeight > c.h - 8) rootPanel.style.maxHeight = Math.max(120, c.h - 8) + "px";
 	const rw = Math.min(rootPanel.offsetWidth, Math.max(120, c.w - 8));
 	const rh = rootPanel.offsetHeight;

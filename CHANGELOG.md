@@ -1,5 +1,17 @@
 # 更新日志
 
+## 1.2.5 — 2026-11-18
+
+- **菜单列宽预算（`runtime/electron-helper/shared-core.js`，32 行）**：`mountContextMenu` 按菜单树深度算 `columnMax = Math.min(300, Math.max(120, Math.floor((c.w - 8 - columnGap * (menuDepth - 1)) / menuDepth)))`（`columnGap = 4`），根列与子列的 `maxWidth` 全部改用它（原为 `Math.max(120, c.x + c.w - 8)` / `Math.max(120, c.w - 8)`），翻折间距改用 `columnGap`；`tightMenu = columnMax < 230` 时给列加 `dsh-pet-menu-tight`（`.dsh-pet-menu-hint{display:none}` + 收紧内边距）。配合标题 `flex:0 1 auto;min-width:0;text-overflow:ellipsis` 与摘要 `flex:0 100 auto;max-width:45%;overflow:hidden`，保证标题优先、摘要让位。真机 924×744 窗口贴右缘（可用宽 602）下三列约 150 px、标题完整、摘要收起、互不压
+- **原声台词标题回归（`voice.js`）**：`label: titleText === pair[0] ? truncateText(lineTextOf(line, menuBodyLang), 16) : titleText` → `label: titleText`。中文下 `trText` 原样返回使判断恒真、label 退化成正文（1.2.3 `ccbeee0` 引入）；日/英菜单凡缺译名处同样退化，一并修好
+- **天气健壮性（`voice.js`）**：新增 `fetchWeatherJson()`（12 s 超时，失败 800 ms 后重试一次）；`readWeather` 失败时回退旧缓存并标 `stale: true`；`loadWeatherCache` 不再因超过 20 分钟丢弃，只要带 `temp` 就装入；新增 `weatherAgeText()` 用本地 `HH:MM` 标注缓存时刻（<5 分钟不加注，zh「（21:38 记下的）」/ en " (21:38 reading)" / ja「（21:38 に測った記録）」）；菜单「重新定位」先出「让我看看你在哪…」气泡，`locate(true)` → `localizeCity` 后立刻报城市，天气转后台预热
+- **天气缓存优先 + 闲聊不重样（`voice.js`）**：`speakWeather()` 改 `readWeather({fresh:false, geo: opts.geo === true})`，缓存超过 4 分钟再后台静默刷新（`WEATHER_TTL_MS` 仍是 20 分钟）；晴天等无专用天气台词时退回闲聊池会跳过刚念过的那句（`fresh` 过滤，空则回退原池）
+- **`/healthz` 新增两字段（复核报告 P3-1 / P3-6）**：`helperDisabled: helperDisabledByEnv()` 区分「主动关掉 helper」与「本来就在网页模式」；`clientBuildSha: readPackageFileSha("lib/client.js")`（新增按 `mtime+size` 缓存的通用文件哈希）让「只换了 `lib/index.js` 的半装」可见
+- **测试**：新增 `test/test-healthz-fields.cjs`（7 条断言：两处字段出现在 healthz 载荷里、`readPackageFileSha` 有定义且被调用、算出的哈希与直接计算一致、文件变化后缓存失效、缺失文件返回 `null`），总数 **13 文件 / 246 断言**
+- **实测**：天气直连 5 次 0.846 / 1.061 / 1.001 / 0.999 / 0.958 s，定位 3 次 0.92 / 1.01 / 1.03 s；晴天播报后接「闲聊·月亮」而非「闲聊·歌」；真机重启后 `/healthz` 报 `version=activatedVersion=1.2.4`→（本版）`1.2.5`、`helperDisabled:false`、`clientBuildSha` 有值
+- **README（三语同步）**：新增 1.2.5 公告；用例数改 13 文件 / 246 断言；npm 安装示例改 `dsh-columbina-pet@1.2.5`
+- **兼容声明**不变（仍是 `0.2.2-rc.3` 实测兼容）
+
 ## 1.2.4 — 2026-11-16
 
 - **诊断被宿主吞掉的根因**：`ctx.logger` 在 DSH 0.2.2-rc.3 里是 pino 风格的采集器——`info / warn / error` 方法都在，但消息只进它自己的 buffer，**不进终端 stdout / stderr**（探针实测：`loggerKeys=bufferSize,buffer,ctx,_snMessage,_snExporter,exporters`）。桌面 App 又把宿主 stdout 直接 pipe 给 GUI 进程、没有接收方，于是「桌面宠物起不来」在宿主里是零痕迹：没日志、没 `launch-error.json`、没 electron 进程。新增 `diag(logger, level, message)`：先 `console[level]` 直出，再把同一句转给宿主 logger，两侧各自 try/catch；19 处 `this.logger.xx?.()` / `ctx.logger?.xx?.()` 全部改走它

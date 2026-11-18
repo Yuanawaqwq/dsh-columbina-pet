@@ -1314,6 +1314,15 @@
     return 'cloud';
   }
 
+  /** 天气接口在国内线路偶尔会抖：超时放宽到 12s，失败再试一次，别一句话就认输 */
+  function fetchWeatherJson(url) {
+    return fetchJson(url, 12000).catch(function (err) {
+      return new Promise(function (resolve) { setTimeout(resolve, 800); }).then(function () {
+        return fetchJson(url, 12000);
+      });
+    });
+  }
+
   function readWeather(opts) {
     opts = opts || {};
     if (!opts.fresh && weatherCache && Date.now() - (weatherCache.at || 0) < WEATHER_TTL_MS) {
@@ -1328,7 +1337,7 @@
         '&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m' +
         '&daily=temperature_2m_max,temperature_2m_min,weather_code' +
         '&timezone=auto&forecast_days=1';
-      return fetchJson(url, 10000).then(function (data) {
+      return fetchWeatherJson(url).then(function (data) {
         var cur = data && data.current;
         var daily = data && data.daily;
         if (!cur || !daily || !Array.isArray(daily.temperature_2m_max)) throw new Error('weather shape');
@@ -1351,6 +1360,16 @@
         writeStore(WEATHER_CACHE_KEY, w);
         return w;
       });
+    }).catch(function (err) {
+      // 网络抖一下就整句「问不到」太脆：手里有旧数据就先顶上去，只标一句「早些时候」
+      var stale = weatherCache || readStore(WEATHER_CACHE_KEY);
+      if (stale && typeof stale.temp === 'number') {
+        var back = {};
+        for (var k in stale) back[k] = stale[k];
+        back.stale = true;
+        return back;
+      }
+      throw err;
     });
   }
 
@@ -1358,13 +1377,28 @@
     return WEATHER_WORDS[normLang(subLang, 'zh')] || WEATHER_WORDS.zh;
   }
 
+  /** 旧数据要说明白是几点测的；刚取到的不加注解，就当是「刚刚知道的」 */
+  function weatherAgeText(w) {
+    var at = Number(w && w.at) || 0;
+    if (!at) return '';
+    if (Date.now() - at < 5 * 60 * 1000) return '';
+    var d = new Date(at);
+    var hh = ('0' + d.getHours()).slice(-2);
+    var mm = ('0' + d.getMinutes()).slice(-2);
+    var lang = normLang(subLang, 'zh');
+    if (lang === 'ja') return '（' + hh + ':' + mm + ' に測った記録）';
+    if (lang === 'en') return ' (' + hh + ':' + mm + ' reading)';
+    return '（' + hh + ':' + mm + ' 记下的）';
+  }
+
   function weatherSummary(w) {
     var lang = normLang(subLang, 'zh');
     var cond = weatherWords()[w.kind] || weatherWords().cloud;
     var city = w.city ? ' · ' + w.city : '';
-    if (lang === 'ja') return '今日は' + cond + '、' + w.temp + '℃（' + w.tmin + '〜' + w.tmax + '℃）' + city;
-    if (lang === 'en') return 'Today ' + cond + ', ' + w.temp + '℃ (' + w.tmin + '–' + w.tmax + '℃)' + city;
-    return '今天' + cond + '，' + w.temp + '℃，' + w.tmin + '~' + w.tmax + '℃' + city;
+    var late = w.stale ? weatherAgeText(w) : '';
+    if (lang === 'ja') return late + '今日は' + cond + '、' + w.temp + '℃（' + w.tmin + '〜' + w.tmax + '℃）' + city;
+    if (lang === 'en') return late + 'Today ' + cond + ', ' + w.temp + '℃ (' + w.tmin + '–' + w.tmax + '℃)' + city;
+    return late + '今天' + cond + '，' + w.temp + '℃，' + w.tmin + '~' + w.tmax + '℃' + city;
   }
 
   function weatherFailText() {
@@ -1396,9 +1430,15 @@
     var label = WEATHER_LINE_LABELS[w.mood];
     var idx = label === undefined ? undefined : menuLineByLabel[label];
     if (typeof idx === 'number' && lineList[idx]) return lineList[idx];
+    // 天气没有专属台词（比如晴天）时退回闲聊，但别把刚念过的那句接着再念一遍
     var pool = chatLinePool();
     if (!pool.length) return null;
-    return pool[Math.floor(Math.random() * pool.length)];
+    var fresh = [];
+    for (var i = 0; i < pool.length; i++) {
+      if (subtitleOf(pool[i]) !== lastText) fresh.push(pool[i]);
+    }
+    var base = fresh.length ? fresh : pool;
+    return base[Math.floor(Math.random() * base.length)];
   }
 
   /** 主流程：先垫一句「让我看看」，数据回来先上字幕，念完再让台词接上；两句都带自己的字幕 */
@@ -1411,8 +1451,14 @@
       : lang === 'en' ? 'Let me check the weather…'
         : '让我看看今天的天气…';
     showBubble(thinking, 20000, true);
-    weatherPending = readWeather({ fresh: true, geo: opts.geo === true })
+    weatherPending = readWeather({ fresh: false, geo: opts.geo === true })
       .then(function (w) {
+        // 20 分钟内先把缓存端上来（免得每次都要等网络），再在后台静默刷新，
+        // 这样下一次问到的已经是新的；刷不到就算了，手里这份照旧能用。
+        if (!w.stale) {
+          var age = Date.now() - (Number(w.at) || 0);
+          if (age > 4 * 60 * 1000) readWeather({ fresh: true }).catch(function () { /* 后台刷新失败不打扰 */ });
+        }
         var summary = weatherSummary(w);
         var ms = Math.max(3600, Math.min(9200, 1500 + summary.length * 130));
         showBubble(summary, ms, true);
@@ -1460,7 +1506,7 @@
 
   (function loadWeatherCache() {
     var saved = readStore(WEATHER_CACHE_KEY);
-    if (saved && saved.at && Date.now() - saved.at < WEATHER_TTL_MS) weatherCache = saved;
+    if (saved && saved.at && typeof saved.temp === 'number') weatherCache = saved;
   })();
 
   // ---------- 2D live 形象（四套，随索引里的 skins 下发） ----------
@@ -3326,7 +3372,7 @@
         var textHint = truncateText(lineTextOf(line, menuBodyLang), menuLang === 'zh' ? 11 : 14);
         var titleText = trText(pair[0], menuLang);
         items.push({
-          label: titleText === pair[0] ? truncateText(lineTextOf(line, menuBodyLang), 16) : titleText,
+          label: titleText,
           hint: textHint,
           action: 'columbina-line',
           __columbinaLine: pair[1],
@@ -3659,8 +3705,13 @@
               return undefined;
             }
             if (node && node.__columbinaWeather === 'relocate') {
-              readWeather({ fresh: true, geo: true }).then(function (w) {
-                showBubble(weatherLocText(w), 3600, true);
+              var rl = normLang(subLang, 'zh');
+              showBubble(rl === 'ja' ? 'あなたがどこにいるのか、見てみるね…'
+                : rl === 'en' ? 'Let me see where you are…'
+                  : '让我看看你在哪…', 15000, true);
+              locate(true).then(localizeCity).then(function (geo) {
+                showBubble(weatherLocText({ city: geo.cityZh || geo.city }), 3600, true);
+                readWeather({ fresh: true, geo: false }).catch(function () { /* 后台预热失败就算了 */ });
               }).catch(function () {
                 showBubble(weatherFailText(), 3600, true);
               });
@@ -3999,7 +4050,7 @@
       return item.ids ? 'line:' + item.index : item.id;
     },
     weather: function (force) {
-      return speakWeather({ fresh: true, geo: force === 'geo' });
+      return speakWeather({ geo: force === 'geo' });
     },
     weatherInfo: function (force) {
       return readWeather({ fresh: !!force, geo: force === 'geo' });
