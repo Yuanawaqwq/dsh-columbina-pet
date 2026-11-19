@@ -292,10 +292,30 @@ function slice(src, startMarker, endMarker, from) {
   // 中间态必须在拿到结果时被清掉，不能残留到下一次
   ok(/clearTimeout\(reassure\)/.test(VOICE_SRC), '③ 拿到结果 / 失败时都要清掉中间态定时器');
 
-  // 旧数据标记
-  ok(/'（旧数据 · ' \+ hh \+ ':' \+ mm \+ '）'/.test(VOICE_SRC), '③ 中文旧数据标记');
-  ok(/' \(older reading, ' \+ hh \+ ':' \+ mm \+ '\)'/.test(VOICE_SRC), '③ 英文旧数据标记');
-  ok(/'（古い記録・' \+ hh \+ ':' \+ mm \+ '）'/.test(VOICE_SRC), '③ 日文旧数据标记');
+  // 旧数据标记：只写 HH:MM 的话，昨天那份会看着像今早那份 —— 跨天必须带日期
+  {
+    const ageSrc = slice(VOICE_SRC, 'function weatherAgeText(w) {', '\n  }');
+    const RealDate = Date;
+    function makeAge(lang, fixedNow) {
+      function FakeDate(a) {
+        return a === undefined ? new RealDate(fixedNow) : new RealDate(a);
+      }
+      FakeDate.now = () => fixedNow;
+      return new Function('normLang', 'subLang', 'Date', ageSrc + '\nreturn weatherAgeText;')(
+        (v) => (v || 'zh'), lang, FakeDate,
+      );
+    }
+    const NOW = new RealDate(2026, 10, 19, 21, 30, 0).getTime();
+    const at = (m, d, h, mi) => new RealDate(2026, m - 1, d, h, mi, 0).getTime();
+
+    ok(makeAge('zh', NOW)({ at: at(11, 19, 9, 5) }) === '（旧数据 · 09:05）', '③ 今天的旧数据只写时分');
+    ok(makeAge('zh', NOW)({ at: at(11, 18, 19, 13) }) === '（旧数据 · 11-18 19:13）', '③ 跨天的旧数据要带月日');
+    ok(makeAge('zh', NOW)({ at: new RealDate(2025, 10, 18, 19, 13, 0).getTime() }) === '（旧数据 · 2025-11-18 19:13）', '③ 跨年的旧数据要带年份');
+    ok(makeAge('zh', NOW)({ at: at(11, 19, 21, 27) }) === '', '③ 5 分钟内的新数据不加注解');
+    ok(makeAge('zh', NOW)({ at: 0 }) === '', '③ 没有时间就不加注解');
+    ok(makeAge('en', NOW)({ at: at(11, 18, 19, 13) }) === ' (older reading, 11-18 19:13)', '③ 英文旧数据标记');
+    ok(makeAge('ja', NOW)({ at: at(11, 18, 19, 13) }) === '（古い記録・11-18 19:13）', '③ 日文旧数据标记');
+  }
 
   // 失败文案要带「还会再试」的承诺，且气泡停留加长到 5600ms
   ok(/today's weather|今天的天气…这会儿问不到呢/.test(VOICE_SRC), '③ 失败文案要说清「问不到」');

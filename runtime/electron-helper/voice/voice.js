@@ -728,6 +728,27 @@
     }
   }
 
+  /**
+   * 把当前气泡收起来。用于「这一句说完了，换下一句」的过渡：同一个气泡里原地改字
+   * （尤其是「（旧数据 · 21:31）今天阴…」换成「今天阴…」这种前缀凭空消失）看着像抽帧，
+   * 收一下再说反而自然。
+   */
+  function retractBubble() {
+    var sprite = getSprite();
+    if (!sprite || typeof sprite.renderBubble !== 'function') return false;
+    try {
+      if (sprite.whisperTimer !== null && sprite.whisperTimer !== void 0) {
+        window.clearTimeout(sprite.whisperTimer);
+        sprite.whisperTimer = null;
+      }
+      sprite.whisperOn = false;
+      sprite.renderBubble();
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
   // ---------- 设置：来自 DSH 设置页（宿主写成 voice-settings.js，这里轮询读） ----------
   //
   // 真相文件在宿主侧（$DSH_HOME/dsh-pet/columbina-voice.json），宿主顺手镜像成
@@ -1244,25 +1265,27 @@
     });
   }
 
-  function freshGeo() {
+  /** 手上的坐标：内存 > 本地存档。过期也照样留着用——经纬度不会一夜之间失效，
+  *  拿它继续问天气，总比「定位一抖 → 整句天气跟着塌」强。 */
+  function savedGeo() {
     var geo = weatherGeo || readStore(WEATHER_GEO_KEY);
-    if (geo && geo.lat && Date.now() - (geo.at || 0) < WEATHER_GEO_TTL_MS) {
+    if (geo && isFinite(geo.lat) && isFinite(geo.lon)) {
       weatherGeo = geo;
       return geo;
     }
     return null;
   }
 
-  function locate(force) {
-    if (!force) {
-      var cached = freshGeo();
-      if (cached) return Promise.resolve(cached);
-    } else {
-      weatherGeo = null;
-    }
+  function geoFresh(geo) {
+    return !!geo && Date.now() - (Number(geo.at) || 0) < WEATHER_GEO_TTL_MS;
+  }
+
+  /** 问一次 ipwho.is；失败就 reject，由 locate() 决定要不要拿旧坐标顶上 */
+  function fetchGeo() {
     // ipwho.is 免 key、回 CORS 头；只取需要的字段，省流量
     var url = 'https://ipwho.is/?fields=success,city,region,country,country_code,latitude,longitude';
-    return fetchJson(url, 9000).then(function (data) {
+    var prev = weatherGeo || readStore(WEATHER_GEO_KEY);
+    return fetchJson(url, 6000).then(function (data) {
       if (!data || data.success === false || !isFinite(data.latitude) || !isFinite(data.longitude)) {
         throw new Error('geo failed');
       }
@@ -1275,10 +1298,29 @@
         lon: Number(data.longitude),
         at: Date.now(),
       };
+      // ipwho.is 只给英文城市名。同一个城市就把之前反查到的中文名接过来，
+      // 不然每次坐标过期刷新都会把「广州」打回「Guangzhou」。
+      if (prev && prev.cityZh && String(prev.city || '').toLowerCase() === geo.city.toLowerCase()) {
+        geo.cityZh = String(prev.cityZh);
+      }
       weatherGeo = geo;
       writeStore(WEATHER_GEO_KEY, geo);
       return geo;
     });
+  }
+
+  /** 取坐标：有旧坐标就先用、后台悄悄刷新；只有「重新定位」才愿意等网络，而且失败也退回旧坐标 */
+  function locate(force) {
+    var saved = savedGeo();
+    if (force) {
+      return fetchGeo().catch(function (err) {
+        if (saved) return saved;
+        throw err;
+      });
+    }
+    if (!saved) return fetchGeo();
+    if (!geoFresh(saved)) fetchGeo().catch(function () { /* 后台刷新失败就继续用旧的 */ });
+    return Promise.resolve(saved);
   }
 
   /** 中文界面里「Guangzhou」不好看：再问一次地名库，失败也不挡播报 */
@@ -1292,9 +1334,38 @@
       if (hit && hit.name) {
         geo.cityZh = String(hit.name);
         writeStore(WEATHER_GEO_KEY, geo);
+        // 天气存档里那句「Guangzhou」也顺手改成「广州」，免得下次先端旧数据时又冒出英文
+        if (weatherCache && weatherCache.city && String(weatherCache.city) !== geo.cityZh) {
+          weatherCache.city = geo.cityZh;
+          writeStore(WEATHER_CACHE_KEY, weatherCache);
+        }
       }
       return geo;
     }).catch(function () { return geo; });
+  }
+
+  /** 中文地名只是锦上添花：和天气请求并行，最多再多等 ms；等不到就先用英文名把天气播出去 */
+  function localizeCityWithin(geo, ms) {
+    return new Promise(function (resolve) {
+      var settled = false;
+      var timer = setTimeout(function () {
+        if (settled) return;
+        settled = true;
+        // 先按英文名把天气播出去，但反查不放弃：成了会写进缓存，下一次就是中文了
+        resolve(geo);
+      }, ms);
+      localizeCity(geo).then(function (g) {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve(g || geo);
+      }, function () {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve(geo);
+      });
+    });
   }
 
   // WMO weather code → 我们自己认的天气类别
@@ -1330,20 +1401,20 @@
     }
     var geoP = opts.geo ? locate(true) : locate(false);
     return geoP.then(function (geo) {
-      return localizeCity(geo);
-    }).then(function (g) {
+      // 天气和中文地名并行发出：地名最多再等 1.5s，等不到就先按英文名把天气播出去
+      var cityP = localizeCityWithin(geo, 2500);
       var url = WEATHER_API +
-        '?latitude=' + g.lat.toFixed(4) + '&longitude=' + g.lon.toFixed(4) +
+        '?latitude=' + geo.lat.toFixed(4) + '&longitude=' + geo.lon.toFixed(4) +
         '&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m' +
         '&daily=temperature_2m_max,temperature_2m_min,weather_code' +
         '&timezone=auto&forecast_days=1';
-      return fetchWeatherJson(url).then(function (data) {
+      var weatherP = fetchWeatherJson(url).then(function (data) {
         var cur = data && data.current;
         var daily = data && data.daily;
         if (!cur || !daily || !Array.isArray(daily.temperature_2m_max)) throw new Error('weather shape');
         var wind = Number(cur.wind_speed_10m) || 0;
         var kind = kindOf(cur.weather_code);
-        var w = {
+        return {
           at: Date.now(),
           code: Number(cur.weather_code) || 0,
           temp: Math.round(Number(cur.temperature_2m)),
@@ -1353,9 +1424,14 @@
           tmax: Math.round(Number(daily.temperature_2m_max[0])),
           kind: kind,
           mood: (wind >= 26 && (kind === 'clear' || kind === 'partly' || kind === 'cloud' || kind === 'over')) ? 'wind' : kind,
-          city: g.cityZh || g.city || '',
+          city: '',
           tz: String(data.timezone || ''),
         };
+      });
+      return Promise.all([weatherP, cityP]).then(function (pair) {
+        var w = pair[0];
+        var g = pair[1] || geo;
+        w.city = (g && g.cityZh) || geo.cityZh || geo.city || '';
         weatherCache = w;
         writeStore(WEATHER_CACHE_KEY, w);
         return w;
@@ -1377,18 +1453,24 @@
     return WEATHER_WORDS[normLang(subLang, 'zh')] || WEATHER_WORDS.zh;
   }
 
-  /** 旧数据要说明白是几点测的；刚取到的不加注解，就当是「刚刚知道的」 */
+  /** 旧数据要说明白是「哪一天的几点」测的——只写 HH:MM 的话，昨天那份看着和今早那份一模一样。
+  *  今天 → 21:38；昨天及更早 → 11-18 21:38；跨年 → 2025-11-18 21:38。刚取到的不加注解。 */
   function weatherAgeText(w) {
     var at = Number(w && w.at) || 0;
     if (!at) return '';
     if (Date.now() - at < 5 * 60 * 1000) return '';
     var d = new Date(at);
+    var now = new Date();
     var hh = ('0' + d.getHours()).slice(-2);
     var mm = ('0' + d.getMinutes()).slice(-2);
+    var sameDay = d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
+    var day = ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
+    if (d.getFullYear() !== now.getFullYear()) day = d.getFullYear() + '-' + day;
+    var stamp = sameDay ? hh + ':' + mm : day + ' ' + hh + ':' + mm;
     var lang = normLang(subLang, 'zh');
-    if (lang === 'ja') return '（古い記録・' + hh + ':' + mm + '）';
-    if (lang === 'en') return ' (older reading, ' + hh + ':' + mm + ')';
-    return '（旧数据 · ' + hh + ':' + mm + '）';
+    if (lang === 'ja') return '（古い記録・' + stamp + '）';
+    if (lang === 'en') return ' (older reading, ' + stamp + ')';
+    return '（旧数据 · ' + stamp + '）';
   }
 
   function weatherSummary(w) {
@@ -1450,27 +1532,46 @@
     opts = opts || {};
     if (weatherPending) return weatherPending;
     stopAudio();
+    var startedAt = Date.now();
     var lang = normLang(subLang, 'zh');
+    var manual = opts.manual === true;
     var thinking = lang === 'ja' ? '今日の天気を見てみるね…'
       : lang === 'en' ? 'Let me check the weather…'
         : '让我看看今天的天气…';
-    showBubble(thinking, 20000, true);
-    // 等太久会让人以为没反应：4 秒还没回来就换一句，把"还在等"说出口
-    var reassure = setTimeout(function () {
+    // 手动点「今天的天气」时，手里那份旧数据先端上来（标清是哪一天的几点），网络回来再换。
+    // 这样点下去就有字，等多久都不像"没反应"。
+    var earlyText = '';
+    if (manual) {
+      var cached = weatherCache || readStore(WEATHER_CACHE_KEY);
+      if (cached && typeof cached.temp === 'number') {
+        var snap = {};
+        for (var ck in cached) snap[ck] = cached[ck];
+        snap.stale = Date.now() - (Number(snap.at) || 0) >= 5 * 60 * 1000;
+        // 存档里可能是「Guangzhou」这种英文名（旧版本写进去的），先把中文名补上再念
+        var g0 = weatherGeo || savedGeo();
+        if (g0 && g0.cityZh) snap.city = String(g0.cityZh);
+        earlyText = weatherSummary(snap);
+        showBubble(earlyText, Math.max(3600, Math.min(9200, 1500 + earlyText.length * 130)), true);
+      }
+    }
+    if (!earlyText) showBubble(thinking, 20000, true);
+    // 等太久会让人以为没反应：4 秒还没回来就换一句，把"还在等"说出口（已经有旧数据的就不再插这句）
+    var reassure = earlyText ? null : setTimeout(function () {
       var still = lang === 'ja' ? '雲が少し厚いみたい、もう少し待ってね…'
         : lang === 'en' ? 'The readings are slow to come... give me a moment…'
           : '云有点厚，再等等…';
       showBubble(still, 9000, true);
     }, 4000);
-    weatherPending = readWeather({ fresh: false, geo: opts.geo === true })
+    weatherPending = readWeather({ fresh: manual, geo: opts.geo === true })
       .then(function (w) {
-        clearTimeout(reassure);
+        if (reassure) clearTimeout(reassure);
         // 20 分钟内先把缓存端上来（免得每次都要等网络），再在后台静默刷新，
         // 这样下一次问到的已经是新的；刷不到就算了，手里这份照旧能用。
-        if (!w.stale) {
+        // 手动点的已经强制刷新过了，不用再补一刀。
+        if (!manual && !w.stale) {
           var age = Date.now() - (Number(w.at) || 0);
           if (age > 4 * 60 * 1000) readWeather({ fresh: true }).catch(function () { /* 后台刷新失败不打扰 */ });
-        } else {
+        } else if (w.stale) {
           // 端的是旧数据：先把话说出去，过一会儿再偷偷试一次，下次问就是新的
           setTimeout(function () {
             readWeather({ fresh: true }).catch(function () { /* 还是不行就等下次 */ });
@@ -1478,7 +1579,30 @@
         }
         var summary = weatherSummary(w);
         var ms = Math.max(3600, Math.min(9200, 1500 + summary.length * 130));
-        showBubble(summary, ms, true);
+        if (summary !== earlyText) {
+          // 手上那份旧数据已经出口了：先收一下，说一句「再看一眼」当过渡，再把新的说出来。
+          // 直接原地换字像抽帧，收起来又不出声像卡了一下，中间垫一句最自然。
+          if (earlyText && retractBubble()) {
+            var bridge = lang === 'ja' ? 'うん……もう一度見てみるね。'
+              : lang === 'en' ? 'Mm... let me take another look.'
+                : '唔……让我再看一眼。';
+            // 桥接句要留够读完的时间：数据回得再快也让它站够 bridgeMinMs，
+            // 回得慢就一直挂着（showBubble 的时长给到上限），别闪一下就没了。
+            var bridgeShownAt = Date.now();
+            var bridgeMinMs = 2000;
+            var bridgeMaxMs = 6000;
+            showBubble(bridge, bridgeMaxMs, true);
+            var reveal = function () {
+              var rest = bridgeMinMs - (Date.now() - bridgeShownAt);
+              if (rest > 0) { setTimeout(reveal, rest); return; }
+              if (Date.now() - startedAt > 30 * 60 * 1000) return;
+              showBubble(summary, ms, false);
+            };
+            reveal();
+          } else {
+            showBubble(summary, ms, true);
+          }
+        }
         var line = weatherLine(w);
         if (!line) return w;
         var wait = Math.min(4200, Math.max(1400, ms - 900));
@@ -1491,7 +1615,10 @@
       .catch(function (err) {
         clearTimeout(reassure);
         console.warn('[columbina-voice] 天气取不到：' + (err && err.message ? err.message : err));
-        showBubble(weatherFailText(), 5600, true);
+        // 已经端过旧数据了就别再拿「问不到」去盖它：那份数据本身还是有效的，
+        // 只是这一次没刷新成功而已。顶多用同一句复述一下，不要吓人。
+        if (!earlyText) showBubble(weatherFailText(), 5600, true);
+        else showBubble(earlyText, 3200, true);
         scheduleWhisper();
         // 失败也留个后手：20 秒后自己再试一次，成了下次问就有新数据
         setTimeout(function () {
@@ -1529,6 +1656,10 @@
   (function loadWeatherCache() {
     var saved = readStore(WEATHER_CACHE_KEY);
     if (saved && saved.at && typeof saved.temp === 'number') weatherCache = saved;
+    // 中文地名反查一趟要 2s 上下：开机顺手补一次，别等用户点「今天的天气」时才现问。
+    // 补上了会写进坐标缓存，之后每次播报都是中文。
+    var g = savedGeo();
+    if (g && !g.cityZh) localizeCity(g).catch(function () { /* 补不上就算了，播英文名 */ });
   })();
 
   // ---------- 2D live 形象（四套，随索引里的 skins 下发） ----------
@@ -3193,7 +3324,7 @@
       return;
     }
     if (act === 'weather-today') {
-      speakWeather({ geo: !weatherGeo });
+      speakWeather({ geo: !weatherGeo, manual: true });
       return;
     }
   }
@@ -3792,7 +3923,7 @@
               return undefined;
             }
             if (node && node.__columbinaWeather === 'today') {
-              speakWeather({ geo: !weatherGeo });
+              speakWeather({ geo: !weatherGeo, manual: true });
               return undefined;
             }
             if (node && typeof node.__columbinaAnimInterval === 'number') {
@@ -4124,7 +4255,7 @@
       return item.ids ? 'line:' + item.index : item.id;
     },
     weather: function (force) {
-      return speakWeather({ geo: force === 'geo' });
+      return speakWeather({ geo: force === 'geo', manual: true });
     },
     weatherInfo: function (force) {
       return readWeather({ fresh: !!force, geo: force === 'geo' });

@@ -52,6 +52,18 @@ Let me put the expectations up front:
 
 > Version-by-version details live in [CHANGELOG.md](./CHANGELOG.md); downloadable packages are on [Releases](https://github.com/Yuanawaqwq/dsh-columbina-pet/releases). Every release gets a section here explaining **what changed and whether you need to touch your settings**.
 
+### 1.2.7 · 2026-11-19
+
+> A **weather-only fix release**: no new features, no sprite or voice-line changes. Three things feel different — the answer comes the moment you click, the city name is in your language, and stale readings say which day they are from. **No setting needs to change**; please **fully quit and reopen DSH** after upgrading (only `voice.js` inside the desktop helper changed).
+
+- **Clicking "today's weather" actually asks again**: 1.2.5 turned off the forced refresh along with the automatic rotation, so repeated clicks returned the same cached reading for up to 20 minutes. Manual clicks now always force a refresh; only the automatic background rotation uses the cache.
+- **An expired location no longer takes the whole answer down**: once the coordinates were older than 24 hours, every click re-queried the geolocation service; when that service hiccuped the weather could not be reached at all and only an old reading was left. The saved coordinates are now **used first** and refreshed quietly in the background, and a failed re-locate falls back to the saved ones instead of failing the whole sentence.
+- **The city name is localized**: refreshing the coordinates no longer drops the Chinese name (the lookup service only answers in English, and the old build let it overwrite). A slow name lookup is no longer abandoned on timeout — it keeps running and writes its result back to the cache. The name is also warmed once at startup instead of waiting for your click.
+- **Stale readings say when they are from**: readings from another day read "older reading, 11-18 21:38", with the year when it differs; anything under 5 minutes old is not labelled at all.
+- **No more text jumping in place**: when the fresh reading arrives the old bubble retracts, a short bridge line ("Mm... let me take another look.", also in Chinese and Japanese) fills the gap for at least 2 s, and it keeps standing while the network is still slow.
+- **DSH 0.2.2-rc.4 / rc.5 compatibility**: both are listed in `dsh.compatibility.dshReleases`. The rc.5 changes (refusal error code, default search provider) do not touch the pet; verified running as before.
+- **Tests**: new `test/test-127-weather.cjs` (36 assertions: saved-coordinate-first, re-locate fallback, a slow city lookup not delaying the weather, the lookup writing back after the timeout, cache hits inside 20 minutes, all three manual entry points). **16 files / 373 assertions** in total.
+
 ### 1.2.6 · 2026-11-18
 
 > No new features, no changes to the sprites or the voice lines — this one is about **making her move smoothly**: no more stutter at every loop point, the web pet now follows the same path as the desktop one, the weather gets a reply while it is still thinking, and diagnostic logs no longer need an environment variable. **No setting needs to change**; please **fully quit and reopen DSH** after upgrading (host, desktop helper and web half all changed).
@@ -399,11 +411,11 @@ Then add it to the profile's `package.json`:
 
 **Quit DSH completely and start it again** (closing the window or refreshing the page does not count as a restart).
 
-### Install from npm (1.2.6)
+### Install from npm (1.2.7)
 
 ```bash
 cd ~/.dsh/profiles/<你的 profile>
-npm install dsh-columbina-pet@1.2.6
+npm install dsh-columbina-pet@1.2.7
 ```
 
 Once it is installed, add `dsh-columbina-pet` to the profile's `dsh.profile.bundles` the same way, then **quit DSH completely and open it again**.

@@ -1,5 +1,16 @@
 # 更新日志
 
+## 1.2.7 — 2026-11-19
+
+- **天气取数重构（`runtime/electron-helper/voice/voice.js`）**：`savedGeo()`（内存 > 存档，只校验 `isFinite(lat/lon)`，**过期也返回**）、`geoFresh(geo)`（24 h）、`fetchGeo()`（ipwho.is，超时 9000 → 6000）、`locate(force)`：`force` 时 `fetchGeo().catch(err => saved ? saved : throw err)`，非 force 时无坐标才等网络、有坐标但过期则后台刷新并立刻返回旧坐标。新增 `localizeCityWithin(geo, ms)` 与天气请求并行，`readWeather` 里 `Promise.all([weatherP, cityP])`，等待上限 1500 → **2500 ms**（实测 geocoding 2012 ms，1.5 s 必然错过），`w.city = (g && g.cityZh) || geo.cityZh || geo.city || ''`。`fetchGeo()` 同城时把旧 `cityZh` 接过来（ipwho.is 只回英文，旧逻辑一覆盖即丢）；`localizeCity()` 超时后不再被丢弃，成功时回写 `WEATHER_GEO_KEY` 并同步改 `weatherCache.city`；`loadWeatherCache()` 开机对缺 `cityZh` 的坐标预热一次
+- **手动点击一律强制刷新**：`speakWeather(opts)` 新增 `opts.manual`，`readWeather({ fresh: manual, geo: opts.geo === true })`；三处调用点（设置面板 `weather-today`、右键菜单两项、helper 命令 `weather(force)`）补 `manual: true`。1.2.5 把 `fresh: true` 改成 `false` 之后，连点只能拿到同一份缓存
+- **旧数据先端上再换**：manual 且有缓存时先 `showBubble(weatherSummary(snap))`（`snap.stale = age >= 5 * 60 * 1000`），并把存档里的英文地名换成 `weatherGeo.cityZh`；新数据到了若与旧句不同，`retractBubble()` 收起旧气泡 → 说桥接句「唔……让我再看一眼。」（en「Mm... let me take another look.」/ ja「うん……もう一度見てみるね。」）→ **至少 2 s、最多挂 6 s** 后再念新的，避免原地换字与闪一下就没
+- **旧数据带日期**：`weatherAgeText` 同日 `HH:MM`、跨日 `MM-DD HH:MM`、跨年 `YYYY-MM-DD HH:MM`；5 分钟内不加注记
+- **兼容表**：`package.json` 的 `dsh.compatibility.dshReleases` 补 `0.2.2-rc.4` / `0.2.2-rc.5`（该字段 DSH 核心不读，纯展示元数据；`@deepseek-ai/dsh-app-boot` 的 `unmetRequirements` 只看 `engines.dsh` 或 `@deepseek-ai/dsh*` peer，本插件 peer 为 `>=0.2.0-rc.1 <0.3.0`，rc.4/rc.5 在 `includePrerelease` 下均满足）
+- **测试**：新增 `test/test-127-weather.cjs`（36 条断言：把「天气取数区」切出来用假 `localStorage`/`fetch`/定时器跑——过期坐标先用手感且永不返回的 fetch 也不挂、重新定位失败退回旧坐标、一无所有时才报错、地名慢 4000 ms 不拖天气且两请求并发、地名超时后仍写回 `广州`、20 分钟内命中缓存不发请求、三处 manual 入口、`speakWeather` 的桥接句与日期标注）。`test/test-126-polish.cjs` 的天气组改成带假时钟的 7 条行为断言。总数 **16 文件 / 373 断言**
+- **实测**：部署 `voice.js`（sha256 `24ec0723…`、188,089 B、CR 0）到 `~/.dsh/profiles/desktop/node_modules/dsh-columbina-pet/`，`cmp` 一致；真机点击后 leveldb 同时写入新 geo（含 `cityZh: 广州`）与新天气记录；真实网络探针（Electron renderer，非沙箱）`withZh=false ms=1137 city=广州` / `withZh=true ms=277 city=广州`
+- **README（三语同步）**：新增 1.2.7 公告；npm 安装示例版本号更新
+
 ## 1.2.6 — 2026-11-18
 
 - **切换间隔改无缝循环（`runtime/electron-helper/voice/voice.js`，`installAnimPacing`）**：旧实现是 `handleEnded` 里 `el.currentTime = 0; el.play()` 从头重播——每圈都要 seek、重开解码，环点就是「卡一下/黑一下」。现在 `armPace(self, wait)` 在 `playOnce` 之后（`sprite.js:597` → `switchTo`）给**即将成为前台**的缓冲挂 `el.loop = true`，`setInterval(...,120)` 巡检 `__columbinaPaceUntil`，到点 `stopPace()` 摘 loop 并置 `__columbinaPaceDone = gen`；`handleEnded` 首行 `if (self.__columbinaPaceDone === self.gen) { self.__columbinaPaceDone = 0; return orig.call(self); }` 让这一遍自然走原逻辑切下一段。原 `__columbinaDwellGen/__columbinaDwellUntil` 分支保留为兜底（loop 没挂上时仍 seek 重播）。`gen` 初值 0、`switchTo` 里 `++this.gen`（`sprite.js:511`），`armPace` 看到的恒 ≥1，`__columbinaPaceDone = 0` 不会误命中
